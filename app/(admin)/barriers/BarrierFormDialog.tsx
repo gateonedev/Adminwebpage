@@ -1,0 +1,239 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Dialog } from '@/components/ui/Dialog';
+import { Field, Input } from '@/components/ui/Field';
+import { Button } from '@/components/ui/Button';
+import { createClient } from '@/lib/supabase/client';
+import type { Barrier } from '@/lib/types';
+
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  siteId: string;
+  barrier: Barrier | null;
+  onSaved: (mode: 'create' | 'update') => void;
+  onError: (message: string) => void;
+}
+
+interface FormState {
+  name: string;
+  ble_identifier: string;
+  relay_duration_ms: string;
+  rssi_threshold: string;
+  is_active: boolean;
+  hands_free_enabled: boolean;
+}
+
+const EMPTY: FormState = {
+  name: '',
+  ble_identifier: '',
+  relay_duration_ms: '2000',
+  rssi_threshold: '',
+  is_active: true,
+  hands_free_enabled: true,
+};
+
+export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved, onError }: Props) {
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      if (barrier) {
+        setForm({
+          name: barrier.name,
+          ble_identifier: barrier.ble_identifier,
+          relay_duration_ms: String(barrier.relay_duration_ms),
+          rssi_threshold: barrier.rssi_threshold !== null ? String(barrier.rssi_threshold) : '',
+          is_active: barrier.is_active,
+          hands_free_enabled: barrier.hands_free_enabled,
+        });
+      } else {
+        setForm(EMPTY);
+      }
+      setError(null);
+      setSaving(false);
+    }
+  }, [open, barrier]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!form.name.trim() || !form.ble_identifier.trim()) {
+      setError('İsim ve BLE kimliği zorunludur.');
+      return;
+    }
+    const relay = Number.parseInt(form.relay_duration_ms, 10);
+    if (Number.isNaN(relay) || relay < 100) {
+      setError('Röle süresi en az 100 ms olmalıdır.');
+      return;
+    }
+    let rssi: number | null = null;
+    if (form.rssi_threshold.trim() !== '') {
+      const n = Number.parseInt(form.rssi_threshold, 10);
+      if (Number.isNaN(n)) {
+        setError('RSSI geçerli bir sayı olmalıdır.');
+        return;
+      }
+      rssi = n;
+    }
+
+    setSaving(true);
+    const supabase = createClient();
+
+    if (barrier) {
+      const { error: dbErr } = await supabase
+        .from('barriers')
+        .update({
+          name: form.name.trim(),
+          ble_identifier: form.ble_identifier.trim(),
+          relay_duration_ms: relay,
+          rssi_threshold: rssi,
+          is_active: form.is_active,
+          hands_free_enabled: form.hands_free_enabled,
+        })
+        .eq('id', barrier.id);
+      setSaving(false);
+      if (dbErr) {
+        onError(`Güncellenemedi: ${dbErr.message}`);
+        return;
+      }
+      onSaved('update');
+    } else {
+      const { error: dbErr } = await supabase.from('barriers').insert({
+        site_id: siteId,
+        name: form.name.trim(),
+        ble_identifier: form.ble_identifier.trim(),
+        auth_token: crypto.randomUUID(),
+        relay_duration_ms: relay,
+        rssi_threshold: rssi,
+        is_active: form.is_active,
+        hands_free_enabled: form.hands_free_enabled,
+      });
+      setSaving(false);
+      if (dbErr) {
+        onError(`Oluşturulamadı: ${dbErr.message}`);
+        return;
+      }
+      onSaved('create');
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={barrier ? 'Bariyeri düzenle' : 'Yeni bariyer'}
+      description={barrier ? undefined : 'Yetkilendirme jetonu otomatik üretilir.'}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+            Vazgeç
+          </Button>
+          <Button onClick={onSubmit} loading={saving}>
+            {barrier ? 'Kaydet' : 'Oluştur'}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <Field label="Bariyer adı" htmlFor="b-name">
+          <Input
+            id="b-name"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Ana giriş kapısı"
+            autoFocus
+          />
+        </Field>
+        <Field label="BLE kimliği" htmlFor="b-ble" hint="ESP32 üzerinde GATEPASS_001 vb. olarak yayın yapan ad.">
+          <Input
+            id="b-ble"
+            value={form.ble_identifier}
+            onChange={(e) => setForm((f) => ({ ...f, ble_identifier: e.target.value }))}
+            placeholder="GATEPASS_001"
+            className="font-mono uppercase"
+            spellCheck={false}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Röle süresi (ms)" htmlFor="b-relay" hint="Tipik değer 2000.">
+            <Input
+              id="b-relay"
+              inputMode="numeric"
+              value={form.relay_duration_ms}
+              onChange={(e) => setForm((f) => ({ ...f, relay_duration_ms: e.target.value }))}
+              placeholder="2000"
+              className="font-mono"
+            />
+          </Field>
+          <Field label="RSSI eşiği (dBm)" htmlFor="b-rssi" optional hint="Boş bırakılırsa mesafe kontrolü kapalı.">
+            <Input
+              id="b-rssi"
+              inputMode="numeric"
+              value={form.rssi_threshold}
+              onChange={(e) => setForm((f) => ({ ...f, rssi_threshold: e.target.value }))}
+              placeholder="-70"
+              className="font-mono"
+            />
+          </Field>
+        </div>
+
+        <SwitchRow
+          label="Aktif"
+          description="Pasif bariyerler hiçbir kullanıcı tarafından açılamaz."
+          checked={form.is_active}
+          onChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+        />
+        <SwitchRow
+          label="Elsiz mod"
+          description="Bu bariyer elsiz açılışa izin versin."
+          checked={form.hands_free_enabled}
+          onChange={(v) => setForm((f) => ({ ...f, hands_free_enabled: v }))}
+        />
+
+        {error && (
+          <div className="rounded-[10px] border border-danger/40 bg-dangerDim px-3 py-2 text-sm text-danger">
+            {error}
+          </div>
+        )}
+      </form>
+    </Dialog>
+  );
+}
+
+function SwitchRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <div>
+        <div className="text-sm font-medium text-text">{label}</div>
+        <div className="text-xs text-textMuted">{description}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-surfaceUp border border-sep'}`}
+      >
+        <span
+          className={`absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-white transition-transform shadow ${checked ? 'translate-x-5' : 'translate-x-0.5'}`}
+        />
+      </button>
+    </div>
+  );
+}

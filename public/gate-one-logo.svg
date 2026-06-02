@@ -1,0 +1,24 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@800&amp;display=swap');
+  </style>
+  
+  <!-- "gate" text -->
+  <text x="0" y="42" font-family="'JetBrains Mono', monospace" font-size="48" font-weight="800" fill="#e2e8f0" letter-spacing="-2">gate</text>
+  
+  <!-- Door icon replacing "o" -->
+  <g transform="translate(130, 0)">
+    <rect x="0" y="0" width="28" height="46" rx="3" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+    <rect x="0" y="0" width="28" height="5" rx="2" fill="#3b82f6"/>
+    <circle cx="22" cy="28" r="2.5" fill="#3b82f6"/>
+  </g>
+  
+  <!-- "ne" text -->
+  <text x="158" y="42" font-family="'JetBrains Mono', monospace" font-size="48" font-weight="800" fill="#e2e8f0" letter-spacing="-2">ne</text>
+  
+  <!-- Accent line -->
+  <rect x="0" y="54" width="50" height="2.5" rx="1" fill="#3b82f6"/>
+  
+  <!-- Tagline -->
+  <text x="0" y="74" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="500" fill="#64748b" letter-spacing="5">SMART ACCESS</text>
+</svg>
