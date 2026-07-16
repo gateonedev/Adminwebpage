@@ -28,6 +28,7 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'active',    label: 'Aktif' },
   { value: 'suspended', label: 'Askıda' },
   { value: 'rejected',  label: 'Reddedildi' },
+  { value: 'archived',  label: 'Arşivlendi' },
 ];
 
 function normalize(s: string | null | undefined): string {
@@ -45,7 +46,7 @@ export function UsersPageClient({ siteId, initialUsers, barriers, groups }: Prop
   const [selected, setSelected] = useState<AppUser | null>(null);
 
   const counts = useMemo(() => {
-    const c = { all: users.length, pending: 0, active: 0, suspended: 0, rejected: 0 } as Record<Filter, number>;
+    const c = { all: users.length, pending: 0, active: 0, suspended: 0, rejected: 0, archived: 0 } as Record<Filter, number>;
     for (const u of users) c[u.status as Filter]++;
     return c;
   }, [users]);
@@ -58,7 +59,10 @@ export function UsersPageClient({ siteId, initialUsers, barriers, groups }: Prop
       return (
         normalize(u.full_name).includes(q) ||
         normalize(u.email).includes(q) ||
-        normalize(u.phone).includes(q)
+        normalize(u.phone).includes(q) ||
+        normalize(u.plate).includes(q) ||
+        normalize(u.block_name).includes(q) ||
+        normalize(u.apartment_no).includes(q)
       );
     });
   }, [users, filter, search]);
@@ -123,7 +127,7 @@ export function UsersPageClient({ siteId, initialUsers, barriers, groups }: Prop
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ad, e-posta veya telefon ile ara…"
+            placeholder="Ad, e-posta, telefon, plaka veya blok/daire ile ara…"
             className="w-full h-10 rounded-[10px] bg-surfaceUp border border-white/[0.06] pl-9 pr-9 text-sm text-text placeholder:text-textMuted outline-none focus:border-accent/40 transition-colors"
           />
           {search && (

@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
@@ -20,8 +21,10 @@ export interface SiteContext {
  *  - super_admin → siteId is from the cookie if present, else first site by name
  *
  * Use in any page that scopes to a single site (dashboard, users, barriers, …).
+ *
+ * React.cache(): aynı istekte birden çok çağrı tek sorgu setine iner.
  */
-export async function getSiteContext(): Promise<SiteContext> {
+export const getSiteContext = cache(async (): Promise<SiteContext> => {
   const me = await requireAdmin();
 
   if (me.role === 'site_admin') {
@@ -45,4 +48,4 @@ export async function getSiteContext(): Promise<SiteContext> {
     : (sites[0]?.id ?? null);
 
   return { me, siteId, sites };
-}
+});

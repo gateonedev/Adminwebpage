@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
-import { Field, Select } from '@/components/ui/Field';
+import { Field, Input, Select } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import type { AdminUserRow, Site } from '@/lib/types';
 import { updateAdminRole } from './actions';
@@ -18,6 +18,7 @@ interface Props {
 export function EditAdminDialog({ open, onOpenChange, admin, sites, onSaved }: Props) {
   const [role, setRole] = useState<'site_admin' | 'super_admin'>('site_admin');
   const [siteId, setSiteId] = useState<string>('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -25,6 +26,7 @@ export function EditAdminDialog({ open, onOpenChange, admin, sites, onSaved }: P
     if (open && admin) {
       setRole(admin.role === 'super_admin' ? 'super_admin' : 'site_admin');
       setSiteId(admin.site_id ?? sites[0]?.id ?? '');
+      setFullName(admin.full_name ?? '');
       setError(null);
     }
   }, [open, admin, sites]);
@@ -34,11 +36,16 @@ export function EditAdminDialog({ open, onOpenChange, admin, sites, onSaved }: P
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (fullName.trim().length < 2) {
+      setError('Ad soyad en az 2 karakter olmalı.');
+      return;
+    }
     startTransition(async () => {
       const res = await updateAdminRole({
         id: admin!.id,
         role,
         site_id: role === 'super_admin' ? null : (siteId || null),
+        full_name: fullName.trim(),
       });
       if (!res.ok) {
         setError(res.message);
@@ -66,6 +73,13 @@ export function EditAdminDialog({ open, onOpenChange, admin, sites, onSaved }: P
       }
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <Field label="Ad soyad" htmlFor="ea-name">
+          <Input
+            id="ea-name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Rol" htmlFor="ea-role">
             <Select

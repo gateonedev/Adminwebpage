@@ -52,14 +52,10 @@ export default async function DashboardPage() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  // Fetch barriers for this site so we can scope today's access logs (access_logs has no site_id).
-  const { data: barrierIdsData } = await supabase
-    .from('barriers')
-    .select('id')
-    .eq('site_id', siteId);
-  const barrierIds = (barrierIdsData ?? []).map((b: { id: string }) => b.id);
-
-  const [pendingResp, activeResp, barriersResp, todayLogsResp, recentLogsResp] = await Promise.all([
+  // access_logs'ta site_id yok; site kapsaması barriers!inner join filtresiyle
+  // yapılır. Böylece bariyer id'lerini önceden çeken ara sorgu (1 RT) kalkar
+  // ve beş sorgu tek Promise.all'da paralel koşar.
+  const [pendingResp, activeResp, barrierCountResp, todayLogsResp, recentLogsResp] = await Promise.all([
     supabase
       .from('users')
       .select('id', { count: 'exact', head: true })
@@ -75,28 +71,24 @@ export default async function DashboardPage() {
       .from('barriers')
       .select('id', { count: 'exact', head: true })
       .eq('site_id', siteId),
-    barrierIds.length === 0
-      ? Promise.resolve({ count: 0, error: null })
-      : supabase
-          .from('access_logs')
-          .select('id', { count: 'exact', head: true })
-          .in('barrier_id', barrierIds)
-          .gte('timestamp', startOfDay.toISOString()),
-    barrierIds.length === 0
-      ? Promise.resolve({ data: [], error: null })
-      : supabase
-          .from('access_logs')
-          .select('id, timestamp, method, users(full_name), guests(guest_name), barriers(name)')
-          .in('barrier_id', barrierIds)
-          .order('timestamp', { ascending: false })
-          .limit(8),
+    supabase
+      .from('access_logs')
+      .select('id, barriers!inner(site_id)', { count: 'exact', head: true })
+      .eq('barriers.site_id', siteId)
+      .gte('timestamp', startOfDay.toISOString()),
+    supabase
+      .from('access_logs')
+      .select('id, timestamp, method, users(full_name), guests(guest_name), barriers!inner(name, site_id)')
+      .eq('barriers.site_id', siteId)
+      .order('timestamp', { ascending: false })
+      .limit(8),
   ]);
 
   const recentLogs = (recentLogsResp.data ?? []) as unknown as AccessLogRow[];
   const tiles = [
     { label: 'Onay bekleyen', value: pendingResp.count ?? 0, icon: UserCirclePlus, tone: pendingResp.count ? 'warn' : 'muted' },
     { label: 'Aktif sakin',   value: activeResp.count ?? 0,  icon: Users,           tone: 'accent' },
-    { label: 'Bariyer',       value: barriersResp.count ?? 0, icon: Garage,         tone: 'muted' },
+    { label: 'Bariyer',       value: barrierCountResp.count ?? 0, icon: Garage,     tone: 'muted' },
     { label: 'Bugünkü geçiş', value: todayLogsResp.count ?? 0, icon: ListChecks,    tone: 'muted' },
   ] as const;
 

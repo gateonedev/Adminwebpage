@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireSuperAdmin } from '@/lib/auth/requireSuperAdmin';
-import type { AdminUserRow, Site } from '@/lib/types';
+import { USER_COLUMNS, type AdminUserRow, type Site } from '@/lib/types';
 import { AdminsPageClient } from './AdminsPageClient';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export default async function AdminsPage() {
   const [adminsResp, sitesResp] = await Promise.all([
     supabase
       .from('users')
-      .select('*, sites(name)')
+      .select(`${USER_COLUMNS}, sites(name)`)
       .in('role', ['site_admin', 'super_admin'])
       .order('created_at', { ascending: false }),
     supabase
@@ -40,7 +40,7 @@ export default async function AdminsPage() {
   return (
     <AdminsPageClient
       currentUserId={me.id}
-      initialAdmins={(adminsResp.data ?? []) as AdminUserRow[]}
+      initialAdmins={(adminsResp.data ?? []) as unknown as AdminUserRow[]}
       sites={(sitesResp.data ?? []) as Site[]}
     />
   );

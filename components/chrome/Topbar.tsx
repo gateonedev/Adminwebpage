@@ -13,6 +13,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
   super_admin: 'Süper yönetici',
   site_admin:  'Site yöneticisi',
   resident:    'Sakin',
+  guest:       'Misafir',
 };
 
 export function Topbar({ email, fullName, role }: Props) {

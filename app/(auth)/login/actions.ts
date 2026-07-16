@@ -1,22 +1,41 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
-type Result =
-  | { ok: true }
-  | { ok: false; message: string };
+export interface LoginState {
+  message: string | null;
+}
 
 /**
- * Called from LoginForm right after a successful signInWithPassword.
- * Verifies the just-authenticated user is a site_admin or super_admin
- * with status='active'. Otherwise signs them out and returns a Turkish
- * error message for the form to display.
+ * Handles the complete login flow on the server so the auth cookies are set
+ * before navigating to the admin area.
  */
-export async function assertAdminOrSignOut(): Promise<Result> {
+export async function login(
+  _prevState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const email = String(formData.get('email') ?? '').trim();
+  const password = String(formData.get('password') ?? '');
+
+  if (!email || !password) {
+    return { message: 'E-posta ve şifre zorunludur.' };
+  }
+
   const supabase = await createClient();
 
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) {
+    return { message: 'E-posta veya şifre hatalı.' };
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, message: 'Oturum bulunamadı.' };
+  if (!user) {
+    return { message: 'Oturum bulunamadı.' };
+  }
 
   const { data: row, error } = await supabase
     .from('users')
@@ -25,30 +44,29 @@ export async function assertAdminOrSignOut(): Promise<Result> {
     .single();
 
   if (error || !row) {
+    // Note: a RESTRICTIVE RLS policy (device_session_gate) hides the row for
+    // any non-active account, so suspended/pending admins also land here.
     await supabase.auth.signOut();
-    return { ok: false, message: 'Hesap bilgisi okunamadı.' };
+    return { message: 'Hesabınız pasif veya bulunamadı. Yöneticinizle iletişime geçin.' };
   }
 
   if (row.role !== 'super_admin' && row.role !== 'site_admin') {
     await supabase.auth.signOut();
-    return {
-      ok: false,
-      message: 'Bu panel yalnızca yönetici hesapları içindir.',
-    };
+    return { message: 'Bu panel yalnızca yönetici hesapları içindir.' };
   }
 
   if (row.status === 'suspended') {
     await supabase.auth.signOut();
-    return { ok: false, message: 'Hesabınız askıya alındı. Yöneticinizle iletişime geçin.' };
+    return { message: 'Hesabınız askıya alındı. Yöneticinizle iletişime geçin.' };
   }
   if (row.status === 'pending') {
     await supabase.auth.signOut();
-    return { ok: false, message: 'Hesabınız henüz onaylanmadı.' };
+    return { message: 'Hesabınız henüz onaylanmadı.' };
   }
   if (row.status === 'rejected') {
     await supabase.auth.signOut();
-    return { ok: false, message: 'Hesabınız reddedilmiş.' };
+    return { message: 'Hesabınız reddedilmiş.' };
   }
 
-  return { ok: true };
+  redirect('/dashboard');
 }

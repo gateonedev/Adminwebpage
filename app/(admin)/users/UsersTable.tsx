@@ -16,6 +16,7 @@ const STATUS_TONE: Record<UserStatus, 'success' | 'warn' | 'muted' | 'danger'> =
   pending:   'warn',
   suspended: 'muted',
   rejected:  'danger',
+  archived:  'muted',
 };
 
 const STATUS_LABEL: Record<UserStatus, string> = {
@@ -23,12 +24,14 @@ const STATUS_LABEL: Record<UserStatus, string> = {
   pending:   'Beklemede',
   suspended: 'Askıda',
   rejected:  'Reddedildi',
+  archived:  'Arşivlendi',
 };
 
 const ROLE_LABEL: Record<AppUser['role'], string> = {
   resident:    'Sakin',
   site_admin:  'Yönetici',
   super_admin: 'Süper',
+  guest:       'Misafir',
 };
 
 interface Props {

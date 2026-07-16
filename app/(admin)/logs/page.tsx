@@ -3,6 +3,7 @@ import { getSiteContext } from '@/lib/site-context';
 import { PageHeader } from '@/components/PageHeader';
 import { SitePicker } from '@/components/chrome/SitePicker';
 import { LogsPageClient, type LogRow, type BarrierLite } from './LogsPageClient';
+import { LOG_SELECT, PAGE_SIZE } from './logQuery';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,33 +25,37 @@ export default async function LogsPage() {
     );
   }
 
-  const { data: barrierData } = await supabase
-    .from('barriers')
-    .select('id, name')
-    .eq('site_id', ctx.siteId)
-    .order('name', { ascending: true });
-  const barriers = (barrierData ?? []) as BarrierLite[];
-  const ids = barriers.map((b) => b.id);
-
-  let logs: LogRow[] = [];
-  if (ids.length > 0) {
-    const { data } = await supabase
+  // Bariyer listesi (filtre pill'leri için) ve ilk log sayfası paralel çekilir;
+  // loglar site'a barriers!inner join filtresiyle kapsanır. İstemcideki
+  // buildQuery ile aynı sözleşme: keyset sıralama + 1 fazla satır → hasMore.
+  const [barriersResp, logsResp] = await Promise.all([
+    supabase
+      .from('barriers')
+      .select('id, name')
+      .eq('site_id', ctx.siteId)
+      .order('name', { ascending: true }),
+    supabase
       .from('access_logs')
-      .select('id, barrier_id, user_id, method, timestamp, users(full_name), barriers(name)')
-      .in('barrier_id', ids)
+      .select(LOG_SELECT)
+      .eq('barriers.site_id', ctx.siteId)
+      .eq('event_type', 'open')
       .order('timestamp', { ascending: false })
-      .limit(200);
-    logs = (data ?? []) as unknown as LogRow[];
-  }
+      .order('id', { ascending: false })
+      .limit(PAGE_SIZE + 1),
+  ]);
+  const barriers = (barriersResp.data ?? []) as BarrierLite[];
+  const rows = (logsResp.data ?? []) as unknown as LogRow[];
+  const hasMore = rows.length > PAGE_SIZE;
+  const logs = rows.slice(0, PAGE_SIZE);
 
   return (
     <>
       <PageHeader
         title="Hareketler"
-        description="Bu sitenin son 200 erişim kaydı, en yeni en üstte."
+        description="Bu sitenin erişim kayıtları, en yeni en üstte. Tarih, bariyer ve yöntem ile filtreleyin."
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
-      <LogsPageClient initialLogs={logs} barriers={barriers} siteId={ctx.siteId} />
+      <LogsPageClient initialLogs={logs} initialHasMore={hasMore} barriers={barriers} siteId={ctx.siteId} />
     </>
   );
 }

@@ -24,27 +24,20 @@ export default async function GuestsPage() {
     );
   }
 
-  const { data: barrierData } = await supabase
-    .from('barriers')
-    .select('id')
-    .eq('site_id', ctx.siteId);
-  const ids = (barrierData ?? []).map((b: { id: string }) => b.id);
-
-  let guests: GuestRow[] = [];
-  if (ids.length > 0) {
-    const { data } = await supabase
-      .from('guests')
-      .select('id, guest_name, guest_phone, access_type, expires_at, max_uses, current_uses, is_active, created_at, barriers(name), users(full_name)')
-      .in('barrier_id', ids)
-      .order('created_at', { ascending: false });
-    guests = (data ?? []) as unknown as GuestRow[];
-  }
+  // Site kapsaması barriers!inner join filtresiyle — bariyer id'lerini
+  // önceden çeken ara sorguya (1 RT) gerek yok.
+  const { data } = await supabase
+    .from('guests')
+    .select('id, guest_name, guest_phone, access_type, expires_at, max_uses, current_uses, is_active, approval_status, user_id, created_at, barriers!inner(name, site_id), users(full_name), guest_barriers(barriers(name))')
+    .eq('barriers.site_id', ctx.siteId)
+    .order('created_at', { ascending: false });
+  const guests = (data ?? []) as unknown as GuestRow[];
 
   return (
     <>
       <PageHeader
         title="Misafirler"
-        description="Sakinlerin oluşturduğu misafir geçişleri."
+        description="Sakinlerin oluşturduğu davetler. Bekleyenleri onaylayın, gerekirse iptal edin."
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
       <GuestsPageClient initialGuests={guests} />

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSiteContext } from '@/lib/site-context';
 import { PageHeader } from '@/components/PageHeader';
 import { SitePicker } from '@/components/chrome/SitePicker';
-import type { Barrier } from '@/lib/types';
+import { BARRIER_COLUMNS, type Barrier } from '@/lib/types';
 import { BarriersPageClient } from './BarriersPageClient';
 
 export const dynamic = 'force-dynamic';
@@ -28,9 +28,10 @@ export default async function BarriersPage() {
     );
   }
 
+  // auth_token is privilege-hidden; select('*') would be "permission denied".
   const { data, error } = await supabase
     .from('barriers')
-    .select('*')
+    .select(BARRIER_COLUMNS)
     .eq('site_id', ctx.siteId)
     .order('name', { ascending: true });
 
@@ -57,7 +58,7 @@ export default async function BarriersPage() {
       />
       <BarriersPageClient
         siteId={ctx.siteId}
-        initialBarriers={(data ?? []) as Barrier[]}
+        initialBarriers={(data ?? []) as unknown as Barrier[]}
       />
     </>
   );

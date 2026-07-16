@@ -88,6 +88,7 @@ const updateRoleSchema = z.object({
   id: z.string().uuid(),
   role: RoleEnum,
   site_id: z.string().uuid().nullable(),
+  full_name: z.string().trim().min(2, 'Ad soyad en az 2 karakter olmalı.'),
 }).superRefine((val, ctx) => {
   if (val.role === 'site_admin' && !val.site_id) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['site_id'], message: 'Site yöneticisi için site seçin.' });
@@ -100,7 +101,7 @@ export async function updateAdminRole(input: z.infer<typeof updateRoleSchema>): 
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Geçersiz veri.' };
   }
-  const { id, role, site_id } = parsed.data;
+  const { id, role, site_id, full_name } = parsed.data;
   if (id === me.id) {
     return { ok: false, message: 'Kendi rolünüzü değiştiremezsiniz.' };
   }
@@ -122,6 +123,15 @@ export async function updateAdminRole(input: z.infer<typeof updateRoleSchema>): 
   });
   if (error) return { ok: false, message: error.message };
 
+  // İsim değişikliği role RPC'sinin parçası değil; service-role ile ayrıca
+  // yazılır (setAdminStatus ile aynı desen — mobil de aynısını yapıyor).
+  const nameChanged = full_name !== (prior?.full_name ?? '');
+  if (nameChanged) {
+    const admin = createAdminClient();
+    const { error: nameError } = await admin.from('users').update({ full_name }).eq('id', id);
+    if (nameError) return { ok: false, message: nameError.message };
+  }
+
   await logAuditServer(me.id, {
     action: 'admin.update_role',
     target_type: 'admin',
@@ -133,6 +143,9 @@ export async function updateAdminRole(input: z.infer<typeof updateRoleSchema>): 
       to_role:      role,
       from_site_id: prior?.site_id ?? null,
       to_site_id:   target_site_id,
+      ...(nameChanged
+        ? { from_name: prior?.full_name ?? null, to_name: full_name }
+        : {}),
     },
   });
 

@@ -24,14 +24,19 @@ export type AuditAction =
   | 'user.suspend'
   | 'user.unsuspend'
   | 'user.reset_device'
+  | 'user.archive'        // written by archive_user RPC; do not call from app code
+  | 'user.restore'        // written by restore_archived_user RPC; do not call from app code
   | 'user.bulk_approve'
   | 'user.bulk_suspend'
   | 'user.bulk_unsuspend'
+  | 'guest.approve'       // written by set_guest_approval RPC; do not call from app code
+  | 'guest.reject'        // written by set_guest_approval RPC; do not call from app code
+  | 'guest.revoke'        // written by revoke_guest_invitation RPC; do not call from app code
   | 'site.create'
   | 'site.update'
   | 'site.delete';
 
-export type AuditTargetType = 'user' | 'admin' | 'site';
+export type AuditTargetType = 'user' | 'admin' | 'site' | 'guest';
 
 export interface AuditInput {
   action: AuditAction;

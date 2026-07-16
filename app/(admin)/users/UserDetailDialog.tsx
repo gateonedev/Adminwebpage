@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<UserStatus, string> = {
   pending:   'Beklemede',
   suspended: 'Askıda',
   rejected:  'Reddedildi',
+  archived:  'Arşivlendi',
 };
 
 const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
@@ -51,6 +52,7 @@ export function UserDetailDialog({
 }: Props) {
   const [step, setStep] = useState<Step>('details');
   const [busy, setBusy] = useState<null | string>(null);
+  const [confirmAction, setConfirmAction] = useState<null | 'archive' | 'restore'>(null);
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -68,6 +70,7 @@ export function UserDetailDialog({
 
     setStep('details');
     setBusy(null);
+    setConfirmAction(null);
     setFullName(user.full_name ?? '');
     setPhone(user.phone ?? '');
     setSelectedBarriers(new Set());
@@ -180,14 +183,23 @@ export function UserDetailDialog({
     if (!user) return;
     setBusy('device');
     const supabase = createClient();
-    const previousDeviceId = user.device_id;
-    const { error } = await supabase
-      .from('users')
-      .update({ device_id: null, device_registered_at: null, last_device_change_at: null })
-      .eq('id', user.id);
+    // Device columns are privilege-hidden since migration 42; the reset goes
+    // through the dedicated RPC (same as the mobile admin screens).
+    const { data, error } = await supabase.rpc('admin_reset_device', {
+      p_user_id: user.id,
+    });
     setBusy(null);
     if (error) {
       onError(`Cihaz sıfırlanamadı: ${error.message}`);
+      return;
+    }
+    const result = data as { ok?: boolean; reason?: string } | null;
+    if (!result?.ok) {
+      onError(
+        result?.reason === 'forbidden'
+          ? 'Bu kullanıcı için yetkiniz yok.'
+          : 'Cihaz sıfırlanamadı.',
+      );
       return;
     }
     void logAudit({
@@ -196,9 +208,50 @@ export function UserDetailDialog({
       target_id: user.id,
       target_label: user.full_name || user.email || undefined,
       site_id: user.site_id,
-      metadata: { previous_device_id: previousDeviceId },
     });
     onSuccess('Cihaz bağı kaldırıldı.');
+  }
+
+  async function handleArchive() {
+    if (!user) return;
+    setConfirmAction(null);
+    setBusy('archive');
+    const supabase = createClient();
+    // Yetki/temizlik işlemleri sunucuda: bariyer erişimleri, grup üyelikleri,
+    // aktif davetler ve cihaz bağı RPC içinde kapatılır; audit'i de RPC yazar.
+    const { data, error } = await supabase.rpc('archive_user', { p_user_id: user.id });
+    setBusy(null);
+    if (error) {
+      onError(`Arşivlenemedi: ${error.message}`);
+      return;
+    }
+    const result = data as { ok?: boolean } | null;
+    if (!result?.ok) {
+      onError('Arşivlenemedi.');
+      return;
+    }
+    onSuccess(`${user.full_name || 'Kullanıcı'} arşivlendi.`);
+  }
+
+  async function handleRestore() {
+    if (!user) return;
+    setConfirmAction(null);
+    setBusy('restore');
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('restore_archived_user', { p_user_id: user.id });
+    setBusy(null);
+    if (error) {
+      onError(`Geri yüklenemedi: ${error.message}`);
+      return;
+    }
+    const result = data as { ok?: boolean; reason?: string } | null;
+    if (!result?.ok) {
+      onError(result?.reason === 'not_archived' ? 'Kullanıcı zaten arşivde değil.' : 'Geri yüklenemedi.');
+      return;
+    }
+    onSuccess(
+      `${user.full_name || 'Kullanıcı'} geri yüklendi. Bariyer ve grup yetkileri otomatik geri gelmez — yeniden atayın.`,
+    );
   }
 
   async function handleSaveProfile() {
@@ -273,6 +326,7 @@ export function UserDetailDialog({
     : 'Kullanıcı detayları';
 
   return (
+    <>
     <Dialog
       open={!!user}
       onOpenChange={onOpenChange}
@@ -292,6 +346,8 @@ export function UserDetailDialog({
           onSaveProfile={handleSaveProfile}
           onSaveAssignments={handleSaveAssignments}
           onToggleSuspend={handleToggleSuspend}
+          onArchiveClick={() => setConfirmAction('archive')}
+          onRestoreClick={() => setConfirmAction('restore')}
         />
       }
     >
@@ -318,6 +374,39 @@ export function UserDetailDialog({
         />
       )}
     </Dialog>
+
+    <Dialog
+      open={confirmAction !== null}
+      onOpenChange={(open) => {
+        if (!open && !busy) setConfirmAction(null);
+      }}
+      title={confirmAction === 'archive' ? 'Siteden çıkar' : 'Arşivden geri yükle'}
+      description={user.full_name || user.email || undefined}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmAction(null)} disabled={!!busy}>
+            Vazgeç
+          </Button>
+          {confirmAction === 'archive' ? (
+            <Button variant="danger" size="sm" onClick={handleArchive} loading={busy === 'archive'}>
+              Siteden çıkar
+            </Button>
+          ) : (
+            <Button variant="primary" size="sm" onClick={handleRestore} loading={busy === 'restore'}>
+              Geri yükle
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p className="text-sm text-textSec">
+        {confirmAction === 'archive'
+          ? 'Kullanıcı aktif listeden kaldırılacak. Kapı yetkileri, grup üyelikleri, aktif misafir davetleri ve cihaz bağı kapatılır; geçmiş kayıtlar saklanır.'
+          : 'Kullanıcı arşivden çıkarılıp tekrar aktif edilecek. Bariyer ve grup yetkileri otomatik geri gelmez — onay sonrası yeniden atamanız gerekir.'}
+      </p>
+    </Dialog>
+    </>
   );
 }
 
@@ -340,6 +429,7 @@ function DetailsStep({
   onResetDevice: () => void;
   deviceBusy: boolean;
 }) {
+  const readOnly = isPending || user.status === 'archived';
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <Field label="Ad soyad" htmlFor="ud-name">
@@ -347,7 +437,7 @@ function DetailsStep({
           id="ud-name"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          disabled={isPending}
+          disabled={readOnly}
         />
       </Field>
       <Field label="Telefon" htmlFor="ud-phone" optional>
@@ -356,7 +446,21 @@ function DetailsStep({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+90…"
-          disabled={isPending}
+          disabled={readOnly}
+        />
+      </Field>
+      <Field label="Plaka" htmlFor="ud-plate">
+        <Input id="ud-plate" value={user.plate ?? '—'} disabled className="font-mono" />
+      </Field>
+      <Field label="Blok / Daire" htmlFor="ud-unit">
+        <Input
+          id="ud-unit"
+          value={
+            user.block_name || user.apartment_no
+              ? [user.block_name, user.apartment_no].filter(Boolean).join(' / ')
+              : '—'
+          }
+          disabled
         />
       </Field>
       <Field label="E-posta" htmlFor="ud-email">
@@ -381,10 +485,17 @@ function DetailsStep({
       </Field>
       <Field label="Cihaz" htmlFor="ud-device">
         <div className="h-11 px-4 rounded-[10px] bg-surfaceUp border border-sep flex items-center justify-between gap-2">
-          <span className="text-sm text-textSec font-mono truncate">
-            {user.device_id ?? <span className="text-textMuted">Bağlı değil</span>}
-          </span>
-          {user.device_id && !isPending && (
+          {/* device_id is privilege-hidden from clients (migration 42); only
+              the reset action remains, handled server-side via RPC. */}
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm text-textMuted truncate">
+              Cihaz bilgisi sunucuda saklanır
+            </span>
+            <Badge tone={user.hands_free_enabled ? 'success' : 'muted'}>
+              {user.hands_free_enabled ? 'Elsiz açık' : 'Elsiz kapalı'}
+            </Badge>
+          </div>
+          {!isPending && user.status !== 'archived' && (user.role === 'resident' || user.role === 'guest') && (
             <button
               type="button"
               onClick={onResetDevice}
@@ -405,6 +516,16 @@ function DetailsStep({
           className="font-mono"
         />
       </Field>
+      {user.status === 'archived' && user.archived_at && (
+        <Field label="Arşivlendi" htmlFor="ud-archived">
+          <Input
+            id="ud-archived"
+            value={dateFormatter.format(new Date(user.archived_at))}
+            disabled
+            className="font-mono"
+          />
+        </Field>
+      )}
     </div>
   );
 }
@@ -507,6 +628,8 @@ function FooterActions({
   onSaveProfile,
   onSaveAssignments,
   onToggleSuspend,
+  onArchiveClick,
+  onRestoreClick,
 }: {
   user: AppUser;
   step: Step;
@@ -520,7 +643,21 @@ function FooterActions({
   onSaveProfile: () => void;
   onSaveAssignments: () => void;
   onToggleSuspend: () => void;
+  onArchiveClick: () => void;
+  onRestoreClick: () => void;
 }) {
+  // archive_user / restore_archived_user RPC'leri yalnızca sakin hesaplarını kabul eder.
+  const canArchive = user.role === 'resident';
+
+  if (user.status === 'archived') {
+    if (!canArchive) return null;
+    return (
+      <Button onClick={onRestoreClick} loading={busy === 'restore'} disabled={!!busy}>
+        Geri yükle
+      </Button>
+    );
+  }
+
   if (user.status === 'pending') {
     if (step === 'details') {
       return (
@@ -548,12 +685,22 @@ function FooterActions({
   }
 
   if (user.status === 'rejected') {
-    return null;
+    if (!canArchive) return null;
+    return (
+      <Button variant="ghost" onClick={onArchiveClick} loading={busy === 'archive'} disabled={!!busy}>
+        Siteden çıkar
+      </Button>
+    );
   }
 
   if (step === 'details') {
     return (
       <>
+        {canArchive && (
+          <Button variant="ghost" onClick={onArchiveClick} loading={busy === 'archive'} disabled={!!busy}>
+            Siteden çıkar
+          </Button>
+        )}
         <Button
           variant={user.status === 'suspended' ? 'subtle' : 'ghost'}
           onClick={onToggleSuspend}

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSiteContext } from '@/lib/site-context';
 import { PageHeader } from '@/components/PageHeader';
 import { SitePicker } from '@/components/chrome/SitePicker';
-import type { AppUser } from '@/lib/types';
+import { USER_COLUMNS, type AppUser } from '@/lib/types';
 import { UsersPageClient } from './UsersPageClient';
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +35,7 @@ export default async function UsersPage() {
   const [usersResp, barriersResp, groupsResp] = await Promise.all([
     supabase
       .from('users')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('site_id', ctx.siteId)
       .order('status', { ascending: true })
       .order('full_name', { ascending: true }),
@@ -78,7 +78,7 @@ export default async function UsersPage() {
       />
       <UsersPageClient
         siteId={ctx.siteId}
-        initialUsers={(usersResp.data ?? []) as AppUser[]}
+        initialUsers={(usersResp.data ?? []) as unknown as AppUser[]}
         barriers={(barriersResp.data ?? []) as BarrierLite[]}
         groups={(groupsResp.data ?? []) as GroupLite[]}
       />

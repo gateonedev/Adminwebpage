@@ -8,7 +8,7 @@ import type { AuditAction } from '@/lib/audit';
 export interface AuditRow {
   id: string;
   action: AuditAction;
-  target_type: 'admin' | 'user' | 'site' | null;
+  target_type: 'admin' | 'user' | 'site' | 'guest' | null;
   target_id: string | null;
   target_label: string | null;
   site_id: string | null;
@@ -18,12 +18,13 @@ export interface AuditRow {
   sites: { name: string | null } | null;
 }
 
-type Category = 'all' | 'admin' | 'user' | 'site';
+type Category = 'all' | 'admin' | 'user' | 'guest' | 'site';
 
 const CATEGORY_LABEL: Record<Category, string> = {
   all:   'Tümü',
   admin: 'Yönetici',
   user:  'Sakin',
+  guest: 'Misafir',
   site:  'Site',
 };
 
@@ -40,9 +41,14 @@ const ACTION_DEF: Record<AuditAction, { label: string; tone: 'accent' | 'success
   'user.suspend':                 { label: 'Sakin askıya alındı',           tone: 'warn'    },
   'user.unsuspend':               { label: 'Sakin aktifleştirildi',         tone: 'success' },
   'user.reset_device':            { label: 'Sakin cihazı sıfırlandı',       tone: 'warn'    },
+  'user.archive':                 { label: 'Sakin arşivlendi',              tone: 'warn'    },
+  'user.restore':                 { label: 'Sakin geri yüklendi',           tone: 'success' },
   'user.bulk_approve':            { label: 'Toplu sakin onayı',             tone: 'success' },
   'user.bulk_suspend':            { label: 'Toplu sakin askıya alma',       tone: 'warn'    },
   'user.bulk_unsuspend':          { label: 'Toplu sakin aktifleştirme',     tone: 'success' },
+  'guest.approve':                { label: 'Misafir onaylandı',             tone: 'success' },
+  'guest.reject':                 { label: 'Misafir reddedildi',            tone: 'danger'  },
+  'guest.revoke':                 { label: 'Misafir daveti iptal edildi',   tone: 'warn'    },
   'site.create':                  { label: 'Site oluşturuldu',              tone: 'accent'  },
   'site.update':                  { label: 'Site güncellendi',              tone: 'accent'  },
   'site.delete':                  { label: 'Site silindi',                  tone: 'danger'  },
@@ -64,7 +70,7 @@ export function AuditPageClient({ rows }: Props) {
   const [category, setCategory] = useState<Category>('all');
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { all: rows.length, admin: 0, user: 0, site: 0 };
+    const c: Record<Category, number> = { all: rows.length, admin: 0, user: 0, guest: 0, site: 0 };
     for (const r of rows) {
       const cat = r.action.split('.')[0] as Exclude<Category, 'all'>;
       if (cat in c) c[cat]++;
