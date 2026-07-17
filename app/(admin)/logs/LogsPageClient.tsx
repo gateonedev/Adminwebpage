@@ -1,10 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowsClockwise, FunnelSimple, MagnifyingGlass, X } from '@phosphor-icons/react';
+import {
+  ArrowsClockwise,
+  DownloadSimple,
+  FunnelSimple,
+  MagnifyingGlass,
+  X,
+} from '@phosphor-icons/react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Dialog } from '@/components/ui/Dialog';
+import { toast } from '@/components/ui/Toast';
 import { cx } from '@/lib/cx';
 import { createClient } from '@/lib/supabase/client';
 import { LOG_SELECT, PAGE_SIZE } from './logQuery';
@@ -78,6 +85,43 @@ const dateTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
   minute: '2-digit',
 });
 
+// ---- CSV dışa aktarma (Türkçe Excel hedefi) --------------------------------
+// Ayraç noktalı virgül + UTF-8 BOM: virgüllü CSV Türkçe Excel'de tek sütuna
+// yapışıyor. Raporlama bilinçli olarak yalnız web'de — mobilde yok.
+
+const EXPORT_PAGE_SIZE = 1000;
+
+const csvDateFormatter = new Intl.DateTimeFormat('tr-TR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+const csvTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function csvField(s: string): string {
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function isoDay(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function exportFileName(f: LogFilters): string {
+  const range = presetRange(f);
+  if (!range) return `gateone-hareketler-${isoDay(new Date())}.csv`;
+  const parts: string[] = [];
+  if (range.start) parts.push(isoDay(range.start));
+  // endExclusive bir sonraki aralığın başlangıcı; dosya adında dahil edilen
+  // son günü göster.
+  parts.push(isoDay(range.endExclusive ? new Date(range.endExclusive.getTime() - 1) : new Date()));
+  return `gateone-hareketler-${parts.join('_')}.csv`;
+}
+
 interface Props {
   siteId: string;
   initialLogs: LogRow[];
@@ -130,6 +174,9 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportCount, setExportCount] = useState(0);
+  const [confirmExport, setConfirmExport] = useState(false);
 
   // Uygulanan filtre seti değiştiğinde yeniden sorgula (ilk mount hariç).
   const [didMount, setDidMount] = useState(false);
@@ -142,16 +189,20 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
-  function buildQuery(cursor: { timestamp: string; id: string } | null) {
+  function buildQuery(
+    f: LogFilters,
+    cursor: { timestamp: string; id: string } | null,
+    limit: number,
+  ) {
     const supabase = createClient();
     let q = supabase
       .from('access_logs')
       .select(LOG_SELECT)
       .eq('barriers.site_id', siteId)
       .eq('event_type', 'open');
-    if (filters.barrierIds.length > 0) q = q.in('barrier_id', filters.barrierIds);
-    if (filters.methods.length > 0) q = q.in('method', filters.methods);
-    const range = presetRange(filters);
+    if (f.barrierIds.length > 0) q = q.in('barrier_id', f.barrierIds);
+    if (f.methods.length > 0) q = q.in('method', f.methods);
+    const range = presetRange(f);
     if (range?.start) q = q.gte('timestamp', range.start.toISOString());
     if (range?.endExclusive) q = q.lt('timestamp', range.endExclusive.toISOString());
     if (cursor) {
@@ -164,12 +215,12 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
     return q
       .order('timestamp', { ascending: false })
       .order('id', { ascending: false })
-      .limit(PAGE_SIZE + 1);
+      .limit(limit);
   }
 
   async function refresh() {
     setRefreshing(true);
-    const { data } = await buildQuery(null);
+    const { data } = await buildQuery(filters, null, PAGE_SIZE + 1);
     const rows = (data ?? []) as unknown as LogRow[];
     setHasMore(rows.length > PAGE_SIZE);
     setLogs(rows.slice(0, PAGE_SIZE));
@@ -180,11 +231,84 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
     const last = logs[logs.length - 1];
     if (!last || loadingMore) return;
     setLoadingMore(true);
-    const { data } = await buildQuery({ timestamp: last.timestamp, id: last.id });
+    const { data } = await buildQuery(filters, { timestamp: last.timestamp, id: last.id }, PAGE_SIZE + 1);
     const rows = (data ?? []) as unknown as LogRow[];
     setHasMore(rows.length > PAGE_SIZE);
     setLogs((prev) => [...prev, ...rows.slice(0, PAGE_SIZE)]);
     setLoadingMore(false);
+  }
+
+  function onExportClick() {
+    if (exporting) return;
+    // Tarih filtresi yoksa önce "tüm kayıtlar indirilecek" uyarısı göster.
+    if (presetRange(filters) === null) {
+      setConfirmExport(true);
+      return;
+    }
+    void runExport();
+  }
+
+  async function runExport() {
+    setConfirmExport(false);
+    setExporting(true);
+    setExportCount(0);
+    try {
+      // Ekranda uygulanan filtrelerle, keyset sayfalamayla bitene kadar çek.
+      // Satır tavanı yok; progress butondaki sayaçla gösterilir.
+      const all: LogRow[] = [];
+      let cursor: { timestamp: string; id: string } | null = null;
+      for (;;) {
+        const { data, error } = await buildQuery(filters, cursor, EXPORT_PAGE_SIZE);
+        if (error) throw new Error(error.message);
+        const rows = (data ?? []) as unknown as LogRow[];
+        all.push(...rows);
+        setExportCount(all.length);
+        if (rows.length < EXPORT_PAGE_SIZE) break;
+        const last = rows[rows.length - 1];
+        cursor = { timestamp: last.timestamp, id: last.id };
+      }
+
+      if (all.length === 0) {
+        toast('Filtrelere uyan indirilebilecek kayıt yok.', 'info');
+        return;
+      }
+
+      const lines = ['Tarih;Saat;Kişi;Tip;Yöntem;Bariyer'];
+      for (const log of all) {
+        const d = new Date(log.timestamp);
+        const person = log.users?.full_name ?? log.guests?.guest_name ?? 'Bilinmeyen';
+        lines.push(
+          [
+            csvDateFormatter.format(d),
+            csvTimeFormatter.format(d),
+            csvField(person),
+            log.method === 'guest' ? 'Misafir' : 'Sakin',
+            METHOD_LABEL[log.method],
+            csvField(log.barriers?.name ?? '—'),
+          ].join(';'),
+        );
+      }
+
+      const blob = new Blob(['\uFEFF' + lines.join('\r\n') + '\r\n'], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportFileName(filters);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast(`${all.length} hareket dışa aktarıldı.`, 'success');
+    } catch (err) {
+      toast(
+        `Dışa aktarılamadı: ${err instanceof Error ? err.message : 'Bilinmeyen hata.'}`,
+        'error',
+      );
+    } finally {
+      setExporting(false);
+    }
   }
 
   function openFilter() {
@@ -317,10 +441,27 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
               ? `${counts.total} / ${counts.all} kayıt gösteriliyor`
               : `${counts.total}${hasMore ? '+' : ''} hareket`}
           </span>
-          <Button variant="subtle" size="sm" onClick={refresh} loading={refreshing}>
-            <ArrowsClockwise size={14} />
-            Yenile
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* loading prop'u içeriği spinner'la değiştirir; sayaçlı progress
+                için buton içeriği elle kurulur. */}
+            <Button variant="subtle" size="sm" onClick={onExportClick} disabled={exporting}>
+              {exporting ? (
+                <>
+                  <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                  {exportCount > 0 ? `${exportCount} kayıt…` : 'İndiriliyor…'}
+                </>
+              ) : (
+                <>
+                  <DownloadSimple size={14} />
+                  CSV indir
+                </>
+              )}
+            </Button>
+            <Button variant="subtle" size="sm" onClick={refresh} loading={refreshing}>
+              <ArrowsClockwise size={14} />
+              Yenile
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -462,6 +603,29 @@ export function LogsPageClient({ siteId, initialLogs, initialHasMore, barriers }
             </div>
           </section>
         </div>
+      </Dialog>
+
+      <Dialog
+        open={confirmExport}
+        onOpenChange={(o) => !o && setConfirmExport(false)}
+        title="CSV indir"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmExport(false)}>
+              Vazgeç
+            </Button>
+            <Button size="sm" onClick={() => void runExport()}>
+              İndir
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-textSec leading-relaxed">
+          Tarih filtresi seçili değil — filtrelere uyan{' '}
+          <span className="text-text font-medium">tüm kayıtlar</span> indirilecek. Büyük
+          sitelerde bu uzun sürebilir.
+        </p>
       </Dialog>
     </>
   );
