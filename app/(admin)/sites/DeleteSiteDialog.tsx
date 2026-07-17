@@ -5,7 +5,6 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Field, Input } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
-import { logAudit } from '@/lib/audit';
 import type { Site } from '@/lib/types';
 
 interface Props {
@@ -35,20 +34,22 @@ export function DeleteSiteDialog({ site, onOpenChange, onDeleted }: Props) {
     setDeleting(true);
     setError(null);
     const supabase = createClient();
-    const { error } = await supabase.from('sites').delete().eq('id', site!.id);
+    // Doğrudan DELETE grant'i kaldırıldı (migration 58); silme super_admin-only
+    // delete_site RPC'sinde. Ad onayını sunucu da zorlar (confirm_name_mismatch)
+    // ve site.delete audit'ini etki sayımlarıyla RPC yazar.
+    const { error } = await supabase.rpc('delete_site', {
+      p_site_id: site!.id,
+      p_confirm_name: confirm.trim(),
+    });
     setDeleting(false);
     if (error) {
-      setError(error.message);
+      setError(
+        error.message.includes('confirm_name_mismatch')
+          ? 'Site adı birebir eşleşmiyor.'
+          : error.message,
+      );
       return;
     }
-    void logAudit({
-      action: 'site.delete',
-      target_type: 'site',
-      target_id: site!.id,
-      target_label: site!.name,
-      site_id: null,
-      metadata: { name: site!.name },
-    });
     onDeleted(site!.id);
   }
 
@@ -57,7 +58,7 @@ export function DeleteSiteDialog({ site, onOpenChange, onDeleted }: Props) {
       open={!!site}
       onOpenChange={onOpenChange}
       title="Siteyi sil"
-      description="Bu işlem geri alınamaz. Siteye bağlı tüm bariyerler, kullanıcılar ve gruplar etkilenebilir."
+      description="Bu işlem geri alınamaz. Siteye bağlı tüm bariyerler, gruplar ve geçiş kayıtları kalıcı olarak silinir; kullanıcı hesapları sitesiz kalır."
       size="sm"
       footer={
         <>

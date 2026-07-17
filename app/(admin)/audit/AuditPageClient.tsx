@@ -233,6 +233,16 @@ function describe(row: AuditRow): string | null {
       if (fn && tn && fn !== tn) return `${fn} → ${tn}`;
       return null;
     }
+    case 'site.delete': {
+      const users = typeof m.user_count === 'number' ? m.user_count : 0;
+      const barriers = typeof m.barrier_count === 'number' ? m.barrier_count : 0;
+      const logs = typeof m.access_log_count === 'number' ? m.access_log_count : 0;
+      const parts: string[] = [];
+      if (users > 0) parts.push(`${users} kullanıcı`);
+      if (barriers > 0) parts.push(`${barriers} bariyer`);
+      if (logs > 0) parts.push(`${logs} geçiş kaydı`);
+      return parts.length > 0 ? `${parts.join(' · ')} etkilendi` : null;
+    }
     case 'user.profile_update': {
       const fn = typeof m.from_name === 'string' ? m.from_name : null;
       const tn = typeof m.to_name === 'string' ? m.to_name : null;

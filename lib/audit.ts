@@ -34,9 +34,9 @@ export type AuditAction =
   | 'guest.approve'       // written by set_guest_approval RPC; do not call from app code
   | 'guest.reject'        // written by set_guest_approval RPC; do not call from app code
   | 'guest.revoke'        // written by revoke_guest_invitation RPC; do not call from app code
-  | 'site.create'
-  | 'site.update'
-  | 'site.delete'
+  | 'site.create'         // written by _audit_site_changes trigger; do not call from app code
+  | 'site.update'         // written by _audit_site_changes trigger; do not call from app code
+  | 'site.delete'         // written by delete_site RPC; do not call from app code
   | 'barrier.create'        // written by _audit_barrier_changes trigger; do not call from app code
   | 'barrier.update'        // written by _audit_barrier_changes trigger; do not call from app code
   | 'barrier.delete'        // written by delete_barrier RPC; do not call from app code

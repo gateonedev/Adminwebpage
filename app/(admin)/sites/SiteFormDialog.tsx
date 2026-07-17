@@ -5,7 +5,6 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Field, Input, Textarea } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
-import { logAudit } from '@/lib/audit';
 import type { Site } from '@/lib/types';
 
 interface Props {
@@ -44,6 +43,8 @@ export function SiteFormDialog({ open, onOpenChange, site, onUpserted }: Props) 
     const supabase = createClient();
     const payload = { name: trimmed, address: address.trim() || null };
 
+    // site.create/site.update audit'ini DB trigger'ı (migration 58) sunucuda
+    // ad/adres diff'iyle yazar; istemci taraflı insert çift kayıt olurdu.
     if (site) {
       const { data, error } = await supabase
         .from('sites')
@@ -56,19 +57,7 @@ export function SiteFormDialog({ open, onOpenChange, site, onUpserted }: Props) 
         setError(error.message);
         return;
       }
-      const updated = data as Site;
-      void logAudit({
-        action: 'site.update',
-        target_type: 'site',
-        target_id: updated.id,
-        target_label: updated.name,
-        site_id: updated.id,
-        metadata: {
-          from_name: site.name,
-          to_name: updated.name,
-        },
-      });
-      onUpserted(updated, 'update');
+      onUpserted(data as Site, 'update');
     } else {
       const { data, error } = await supabase
         .from('sites')
@@ -80,15 +69,7 @@ export function SiteFormDialog({ open, onOpenChange, site, onUpserted }: Props) 
         setError(error.message);
         return;
       }
-      const created = data as Site;
-      void logAudit({
-        action: 'site.create',
-        target_type: 'site',
-        target_id: created.id,
-        target_label: created.name,
-        site_id: created.id,
-      });
-      onUpserted(created, 'create');
+      onUpserted(data as Site, 'create');
     }
   }
 
