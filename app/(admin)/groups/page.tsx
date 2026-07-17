@@ -40,6 +40,9 @@ export default async function GroupsPage() {
       .from('users')
       .select('id, full_name, status')
       .eq('site_id', ctx.siteId)
+      // trg_gm_resident_only (migration 45): gruplara yalnız resident eklenebilir,
+      // adminler aday listesinde hiç görünmesin.
+      .eq('role', 'resident')
       .eq('status', 'active')
       .order('full_name', { ascending: true }),
     supabase

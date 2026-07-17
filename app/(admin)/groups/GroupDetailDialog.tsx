@@ -49,7 +49,9 @@ export function GroupDetailDialog({
     Promise.all([
       supabase
         .from('group_members')
-        .select('user_id, users(id, full_name, status)')
+        // group_members'ın users'a iki FK'sı var (user_id + added_by);
+        // hint'siz users(...) embed'i PGRST201 (ambiguous) verir.
+        .select('user_id, users!group_members_user_id_fkey(id, full_name, status)')
         .eq('group_id', group.id),
       supabase
         .from('group_barrier_access')
@@ -57,9 +59,17 @@ export function GroupDetailDialog({
         .eq('group_id', group.id),
     ]).then(([memRes, barRes]) => {
       if (aborted) return;
-      const mem = (memRes.data ?? [])
-        .map((r: any) => r.users as UserLite | null)
-        .filter((u): u is UserLite => !!u);
+      const err = memRes.error ?? barRes.error;
+      if (err) {
+        onError(`Grup detayı yüklenemedi: ${err.message}`);
+        onOpenChange(false);
+        return;
+      }
+      const mem = (memRes.data ?? []).map((r: any): UserLite => ({
+        id: r.user_id as string,
+        full_name: (r.users?.full_name as string | undefined) ?? '—',
+        status: (r.users?.status as string | undefined) ?? '',
+      }));
       const bar = (barRes.data ?? [])
         .map((r: any) => r.barriers as BarrierLite | null)
         .filter((b): b is BarrierLite => !!b);
@@ -87,11 +97,17 @@ export function GroupDetailDialog({
       .from('group_members')
       .insert({ group_id: group!.id, user_id: user.id });
     setBusy(null);
-    if (error) {
+    // 23505 (unique ihlali) = kullanıcı zaten üye (örn. mobilden eklendi) —
+    // hata değil, listeyi hedef duruma getir.
+    if (error && error.code !== '23505') {
       onError(`Eklenemedi: ${error.message}`);
       return;
     }
-    setMembers((prev) => [...prev, user].sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr')));
+    setMembers((prev) =>
+      prev.some((u) => u.id === user.id)
+        ? prev
+        : [...prev, user].sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr')),
+    );
     setShowMemberPicker(false);
     onChanged();
   }
