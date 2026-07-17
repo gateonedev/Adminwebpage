@@ -127,7 +127,7 @@ export function UsersPageClient({ siteId, initialUsers, barriers, groups }: Prop
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ad, e-posta, telefon, plaka veya blok/daire ile ara…"
+            placeholder="Ara: ad, blok, daire, e-posta"
             className="w-full h-10 rounded-[10px] bg-surfaceUp border border-white/[0.06] pl-9 pr-9 text-sm text-text placeholder:text-textMuted outline-none focus:border-accent/40 transition-colors"
           />
           {search && (

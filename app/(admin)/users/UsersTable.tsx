@@ -34,6 +34,21 @@ const ROLE_LABEL: Record<AppUser['role'], string> = {
   guest:       'Misafir',
 };
 
+/**
+ * Satır bilgisi: "A Blok · Daire 12". Blok adında "blok" kelimesi zaten
+ * geçiyorsa tekrar eklenmez ("A Blok Blok" olmasın); daire için aynı kural.
+ * İkisi de boşsa e-posta fallback'i gösterilir (satır bilgisiz kalmasın;
+ * e-posta ayrıca detay görünümünde durur). Mobil residenceLabel ile aynı.
+ */
+function residenceLabel(user: AppUser): string | null {
+  const parts: string[] = [];
+  const block = user.block_name?.trim();
+  const apartment = user.apartment_no?.trim();
+  if (block) parts.push(/blok/i.test(block) ? block : `${block} Blok`);
+  if (apartment) parts.push(/daire/i.test(apartment) ? apartment : `Daire ${apartment}`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 interface Props {
   users: AppUser[];
   selectedIds: Set<string>;
@@ -62,7 +77,7 @@ export function UsersTable({
           onClick={onToggleAllVisible}
         />
         <div>Ad</div>
-        <div>İletişim</div>
+        <div>Blok / Daire</div>
         <div>Rol</div>
         <div>Durum</div>
         <div className="w-8" />
@@ -102,10 +117,13 @@ export function UsersTable({
               </div>
             </div>
             <div className="min-w-0 text-sm text-textSec">
-              <div className="font-mono truncate">
-                {u.email || <span className="text-textMuted">—</span>}
-              </div>
-              {u.phone && <div className="text-textMuted truncate">{u.phone}</div>}
+              {residenceLabel(u) ? (
+                <div className="truncate">{residenceLabel(u)}</div>
+              ) : (
+                <div className="font-mono truncate">
+                  {u.email || <span className="text-textMuted">—</span>}
+                </div>
+              )}
             </div>
             <div>
               <Badge tone={u.role === 'resident' ? 'muted' : 'accent'}>
