@@ -26,7 +26,9 @@ const items: NavItem[] = [
   { href: '/notifications', label: 'Bildirimler',  icon: Bell },
   { href: '/sites',         label: 'Siteler',      icon: Buildings,   superOnly: true },
   { href: '/admins',        label: 'Yöneticiler',  icon: ShieldCheck, superOnly: true },
-  { href: '/audit',         label: 'Denetim',      icon: ShieldStar,  superOnly: true },
+  // Denetim artık site adminine de açık; RLS (site_admin_read_audit) kendi
+  // sitesinin kayıtlarıyla sınırlar.
+  { href: '/audit',         label: 'Denetim',      icon: ShieldStar },
   { href: '/account',       label: 'Hesabım',      icon: UserCircle },
 ];
 

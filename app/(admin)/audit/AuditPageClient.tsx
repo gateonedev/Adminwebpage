@@ -69,10 +69,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
 });
 
 interface Props {
+  viewerRole: string;
   rows: AuditRow[];
 }
 
-export function AuditPageClient({ rows }: Props) {
+export function AuditPageClient({ viewerRole, rows }: Props) {
+  // Site admini RLS gereği super_admin'in users satırını okuyamaz; aktör
+  // join'i null gelen satırlar onun görünümünde "Gate One yönetimi"dir.
+  // Super admin görünümünde null aktör gerçekten silinmiş hesaptır.
+  const actorFallback = viewerRole === 'site_admin' ? 'Gate One yönetimi' : 'Silinmiş hesap';
   const [category, setCategory] = useState<Category>('all');
 
   const counts = useMemo(() => {
@@ -127,7 +132,7 @@ export function AuditPageClient({ rows }: Props) {
             <div className="w-28 text-right">Zaman</div>
           </div>
           {filtered.map((r) => (
-            <Row key={r.id} row={r} />
+            <Row key={r.id} row={r} actorFallback={actorFallback} />
           ))}
         </div>
       )}
@@ -135,9 +140,9 @@ export function AuditPageClient({ rows }: Props) {
   );
 }
 
-function Row({ row }: { row: AuditRow }) {
+function Row({ row, actorFallback }: { row: AuditRow; actorFallback: string }) {
   const def = ACTION_DEF[row.action] ?? { label: row.action, tone: 'muted' as const };
-  const actorName = row.users?.full_name?.trim() || row.users?.email || 'Silinmiş hesap';
+  const actorName = row.users?.full_name?.trim() || row.users?.email || actorFallback;
   const actorEmail = row.users?.email ?? null;
   const detail = describeMetadata(row);
 
