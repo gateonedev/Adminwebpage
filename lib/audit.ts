@@ -25,6 +25,7 @@ export type AuditAction =
   | 'user.suspend'        // written by set_resident_status RPC; do not call from app code
   | 'user.unsuspend'      // written by set_resident_status RPC; do not call from app code
   | 'user.reset_device'
+  | 'user.device_reset'   // legacy alias written by admin_reset_device RPC (mig. 42); do not call from app code
   | 'user.archive'        // written by archive_user RPC; do not call from app code
   | 'user.restore'        // written by restore_archived_user RPC; do not call from app code
   | 'user.bulk_approve'
