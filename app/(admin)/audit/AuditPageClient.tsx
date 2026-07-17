@@ -8,7 +8,7 @@ import type { AuditAction } from '@/lib/audit';
 export interface AuditRow {
   id: string;
   action: AuditAction;
-  target_type: 'admin' | 'user' | 'site' | 'guest' | null;
+  target_type: 'admin' | 'user' | 'site' | 'guest' | 'barrier' | null;
   target_id: string | null;
   target_label: string | null;
   site_id: string | null;
@@ -18,14 +18,15 @@ export interface AuditRow {
   sites: { name: string | null } | null;
 }
 
-type Category = 'all' | 'admin' | 'user' | 'guest' | 'site';
+type Category = 'all' | 'admin' | 'user' | 'guest' | 'site' | 'barrier';
 
 const CATEGORY_LABEL: Record<Category, string> = {
-  all:   'Tümü',
-  admin: 'Yönetici',
-  user:  'Sakin',
-  guest: 'Misafir',
-  site:  'Site',
+  all:     'Tümü',
+  admin:   'Yönetici',
+  user:    'Sakin',
+  guest:   'Misafir',
+  site:    'Site',
+  barrier: 'Bariyer',
 };
 
 const ACTION_DEF: Record<AuditAction, { label: string; tone: 'accent' | 'success' | 'warn' | 'danger' | 'muted' }> = {
@@ -52,6 +53,10 @@ const ACTION_DEF: Record<AuditAction, { label: string; tone: 'accent' | 'success
   'site.create':                  { label: 'Site oluşturuldu',              tone: 'accent'  },
   'site.update':                  { label: 'Site güncellendi',              tone: 'accent'  },
   'site.delete':                  { label: 'Site silindi',                  tone: 'danger'  },
+  'barrier.create':               { label: 'Bariyer oluşturuldu',           tone: 'accent'  },
+  'barrier.update':               { label: 'Bariyer güncellendi',           tone: 'accent'  },
+  'barrier.delete':               { label: 'Bariyer silindi',               tone: 'danger'  },
+  'barrier.rotate_secret':        { label: 'Bariyer anahtarı yenilendi',    tone: 'warn'    },
 };
 
 const dateTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
@@ -70,7 +75,7 @@ export function AuditPageClient({ rows }: Props) {
   const [category, setCategory] = useState<Category>('all');
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { all: rows.length, admin: 0, user: 0, guest: 0, site: 0 };
+    const c: Record<Category, number> = { all: rows.length, admin: 0, user: 0, guest: 0, site: 0, barrier: 0 };
     for (const r of rows) {
       const cat = r.action.split('.')[0] as Exclude<Category, 'all'>;
       if (cat in c) c[cat]++;
@@ -173,6 +178,16 @@ const STATUS_TR: Record<string, string> = {
   rejected:  'Reddedildi',
 };
 
+const BARRIER_FIELD_TR: Record<string, string> = {
+  name: 'ad',
+  site_id: 'site',
+  ble_identifier: 'BLE kimliği',
+  relay_duration_ms: 'röle süresi',
+  rssi_threshold: 'RSSI eşiği',
+  is_active: 'aktiflik',
+  hands_free_enabled: 'elsiz mod',
+};
+
 function describeMetadata(row: AuditRow): string | null {
   const m = row.metadata ?? {};
   switch (row.action) {
@@ -208,6 +223,28 @@ function describeMetadata(row: AuditRow): string | null {
       const prev = typeof m.previous_device_id === 'string' ? m.previous_device_id : null;
       return prev ? `Önceki cihaz: ${prev}` : null;
     }
+    case 'barrier.create':
+      return typeof m.ble_identifier === 'string' ? `BLE: ${m.ble_identifier}` : null;
+    case 'barrier.update': {
+      const fn = typeof m.from_name === 'string' ? m.from_name : null;
+      const tn = typeof m.to_name === 'string' ? m.to_name : null;
+      if (fn && tn && fn !== tn) return `${fn} → ${tn}`;
+      const changed = Array.isArray(m.changed)
+        ? (m.changed as unknown[]).filter((x): x is string => typeof x === 'string')
+        : [];
+      const parts = changed.map((k) => BARRIER_FIELD_TR[k] ?? k);
+      return parts.length > 0 ? parts.join(' · ') : null;
+    }
+    case 'barrier.delete': {
+      const logs = typeof m.access_log_count === 'number' ? m.access_log_count : 0;
+      const guests = typeof m.guest_count === 'number' ? m.guest_count : 0;
+      const parts: string[] = [];
+      if (logs > 0) parts.push(`${logs} geçiş kaydı`);
+      if (guests > 0) parts.push(`${guests} misafir daveti`);
+      return parts.length > 0 ? `${parts.join(' · ')} silindi` : null;
+    }
+    case 'barrier.rotate_secret':
+      return m.generated === false ? 'Özel anahtar yüklendi' : 'Yeni anahtar üretildi';
     default:
       return null;
   }

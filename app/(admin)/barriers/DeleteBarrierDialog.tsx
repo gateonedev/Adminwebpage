@@ -32,7 +32,9 @@ export function DeleteBarrierDialog({ barrier, onOpenChange, onDeleted, onError 
     if (!matches || !barrier) return;
     setDeleting(true);
     const supabase = createClient();
-    const { error } = await supabase.from('barriers').delete().eq('id', barrier.id);
+    // Doğrudan DELETE grant'i kaldırıldı; silme super_admin-only, audit'li
+    // delete_barrier RPC'si üzerinden.
+    const { error } = await supabase.rpc('delete_barrier', { p_barrier_id: barrier.id });
     setDeleting(false);
     if (error) {
       onError(`Silinemedi: ${error.message}`);
@@ -46,7 +48,7 @@ export function DeleteBarrierDialog({ barrier, onOpenChange, onDeleted, onError 
       open={!!barrier}
       onOpenChange={onOpenChange}
       title="Bariyeri sil"
-      description="Bu işlem geri alınamaz. Bariyere ait tüm yetkilendirmeler ve geçmiş kayıtlar etkilenebilir."
+      description="Bu işlem geri alınamaz. Bariyere ait tüm geçiş kayıtları ve misafir davetleri de kalıcı olarak silinir."
       size="sm"
       footer={
         <>

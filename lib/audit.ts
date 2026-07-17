@@ -34,9 +34,13 @@ export type AuditAction =
   | 'guest.revoke'        // written by revoke_guest_invitation RPC; do not call from app code
   | 'site.create'
   | 'site.update'
-  | 'site.delete';
+  | 'site.delete'
+  | 'barrier.create'        // written by _audit_barrier_changes trigger; do not call from app code
+  | 'barrier.update'        // written by _audit_barrier_changes trigger; do not call from app code
+  | 'barrier.delete'        // written by delete_barrier RPC; do not call from app code
+  | 'barrier.rotate_secret'; // written by rotate_barrier_secret RPC; do not call from app code
 
-export type AuditTargetType = 'user' | 'admin' | 'site' | 'guest';
+export type AuditTargetType = 'user' | 'admin' | 'site' | 'guest' | 'barrier';
 
 export interface AuditInput {
   action: AuditAction;

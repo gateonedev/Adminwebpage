@@ -7,6 +7,8 @@ import type { Barrier } from '@/lib/types';
 
 interface Props {
   barriers: Barrier[];
+  /** Silme super_admin-only (delete_barrier RPC'si de sunucuda zorlar). */
+  canDelete: boolean;
   onEdit: (b: Barrier) => void;
   onDelete: (b: Barrier) => void;
 }
@@ -19,7 +21,7 @@ function formatRelay(ms: number): string {
   return `${ms}ms`;
 }
 
-export function BarriersTable({ barriers, onEdit, onDelete }: Props) {
+export function BarriersTable({ barriers, canDelete, onEdit, onDelete }: Props) {
   return (
     <div className="border-t border-sep divide-y divide-sep">
       <div className="grid grid-cols-[1.4fr_1.6fr_auto_auto_auto_auto] gap-4 px-3 py-3 text-[11px] uppercase tracking-wider text-textMuted">
@@ -45,21 +47,27 @@ export function BarriersTable({ barriers, onEdit, onDelete }: Props) {
           </div>
           <div className="text-sm text-textSec font-mono truncate">{b.ble_identifier}</div>
           <div className="text-sm text-textSec font-mono">{formatRelay(b.relay_duration_ms)}</div>
-          <div className="text-sm text-textSec font-mono">
-            {b.rssi_threshold !== null ? `${b.rssi_threshold} dBm` : <span className="text-textMuted">—</span>}
-          </div>
+          <div className="text-sm text-textSec font-mono">{b.rssi_threshold} dBm</div>
           <div className="flex items-center gap-1.5">
             {!b.is_active && <Badge tone="warn">Pasif</Badge>}
             {b.hands_free_enabled && <Badge tone="accent">Elsiz</Badge>}
           </div>
-          <RowMenu onEdit={() => onEdit(b)} onDelete={() => onDelete(b)} />
+          <RowMenu canDelete={canDelete} onEdit={() => onEdit(b)} onDelete={() => onDelete(b)} />
         </div>
       ))}
     </div>
   );
 }
 
-function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function RowMenu({
+  canDelete,
+  onEdit,
+  onDelete,
+}: {
+  canDelete: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -83,14 +91,18 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
             <PencilSimple size={15} />
             Düzenle
           </DropdownMenu.Item>
-          <DropdownMenu.Separator className="h-px bg-sep my-1" />
-          <DropdownMenu.Item
-            onSelect={onDelete}
-            className="flex items-center gap-2 px-3 py-2 text-sm rounded-md cursor-pointer outline-none text-danger data-[highlighted]:bg-dangerDim"
-          >
-            <Trash size={15} />
-            Sil
-          </DropdownMenu.Item>
+          {canDelete && (
+            <>
+              <DropdownMenu.Separator className="h-px bg-sep my-1" />
+              <DropdownMenu.Item
+                onSelect={onDelete}
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md cursor-pointer outline-none text-danger data-[highlighted]:bg-dangerDim"
+              >
+                <Trash size={15} />
+                Sil
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

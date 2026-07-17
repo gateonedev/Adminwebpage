@@ -39,7 +39,8 @@ export interface Barrier {
   is_active: boolean;
   hands_free_enabled: boolean;
   relay_duration_ms: number;
-  rssi_threshold: number | null;
+  // NOT NULL since migration 0024 (default -65, CHECK -100..-30).
+  rssi_threshold: number;
   created_at: string;
 }
 

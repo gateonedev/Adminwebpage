@@ -12,10 +12,14 @@ import { DeleteBarrierDialog } from './DeleteBarrierDialog';
 
 interface Props {
   siteId: string;
+  isSuper: boolean;
   initialBarriers: Barrier[];
 }
 
-export function BarriersPageClient({ siteId, initialBarriers }: Props) {
+// Donanım parametreleri (BLE kimliği, röle, RSSI) kurulumcu alanıdır;
+// site admini yalnız ad + aktiflik + elsiz modu yönetir (sunucu tarafında
+// guard trigger + delete_barrier RPC'siyle de zorlanır).
+export function BarriersPageClient({ siteId, isSuper, initialBarriers }: Props) {
   const router = useRouter();
   const [barriers] = useState(initialBarriers);
   const [formOpen, setFormOpen] = useState(false);
@@ -37,27 +41,36 @@ export function BarriersPageClient({ siteId, initialBarriers }: Props) {
 
   return (
     <>
-      <div className="flex justify-end mb-6">
-        <Button onClick={openCreate}>
-          <Plus size={16} weight="bold" />
-          Yeni bariyer
-        </Button>
-      </div>
+      {isSuper && (
+        <div className="flex justify-end mb-6">
+          <Button onClick={openCreate}>
+            <Plus size={16} weight="bold" />
+            Yeni bariyer
+          </Button>
+        </div>
+      )}
 
       {barriers.length === 0 ? (
         <div className="border-t border-sep py-16 text-center">
           <p className="text-text font-medium">Henüz bariyer yok.</p>
-          <p className="mt-1 text-sm text-textSec">İlk bariyeri ekleyin.</p>
-          <div className="mt-6">
-            <Button onClick={openCreate}>
-              <Plus size={16} weight="bold" />
-              Yeni bariyer
-            </Button>
-          </div>
+          <p className="mt-1 text-sm text-textSec">
+            {isSuper
+              ? 'Bu siteye ilk bariyeri ekleyin.'
+              : 'Bariyer kurulumu Gate One ekibi tarafından yapılır.'}
+          </p>
+          {isSuper && (
+            <div className="mt-6">
+              <Button onClick={openCreate}>
+                <Plus size={16} weight="bold" />
+                Yeni bariyer
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <BarriersTable
           barriers={barriers}
+          canDelete={isSuper}
           onEdit={openEdit}
           onDelete={setDeleting}
         />
@@ -67,6 +80,7 @@ export function BarriersPageClient({ siteId, initialBarriers }: Props) {
         open={formOpen}
         onOpenChange={setFormOpen}
         siteId={siteId}
+        isSuper={isSuper}
         barrier={editing}
         onSaved={(mode) => {
           toast(mode === 'create' ? 'Bariyer oluşturuldu.' : 'Bariyer güncellendi.', 'success');

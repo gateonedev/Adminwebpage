@@ -58,6 +58,7 @@ export default async function BarriersPage() {
       />
       <BarriersPageClient
         siteId={ctx.siteId}
+        isSuper={ctx.me.role === 'super_admin'}
         initialBarriers={(data ?? []) as unknown as Barrier[]}
       />
     </>

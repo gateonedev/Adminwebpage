@@ -11,6 +11,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   siteId: string;
+  /**
+   * Donanım parametreleri (BLE kimliği, röle, RSSI) kurulumcu alanıdır; site
+   * admini yalnız ad + aktiflik + elsiz modu yönetir. Sunucu tarafında guard
+   * trigger aynı kuralı zorlar; oluşturma da super_admin-only.
+   */
+  isSuper: boolean;
   barrier: Barrier | null;
   onSaved: (mode: 'create' | 'update') => void;
   onError: (message: string) => void;
@@ -34,7 +40,7 @@ const EMPTY: FormState = {
   hands_free_enabled: true,
 };
 
-export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved, onError }: Props) {
+export function BarrierFormDialog({ open, onOpenChange, siteId, isSuper, barrier, onSaved, onError }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,7 +52,7 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
           name: barrier.name,
           ble_identifier: barrier.ble_identifier,
           relay_duration_ms: String(barrier.relay_duration_ms),
-          rssi_threshold: barrier.rssi_threshold !== null ? String(barrier.rssi_threshold) : '',
+          rssi_threshold: String(barrier.rssi_threshold),
           is_active: barrier.is_active,
           hands_free_enabled: barrier.hands_free_enabled,
         });
@@ -61,9 +67,38 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!barrier && !isSuper) return;
 
-    if (!form.name.trim() || !form.ble_identifier.trim()) {
-      setError('İsim ve BLE kimliği zorunludur.');
+    if (!form.name.trim()) {
+      setError('İsim zorunludur.');
+      return;
+    }
+
+    const supabase = createClient();
+
+    if (barrier && !isSuper) {
+      // Donanım alanları hiç gönderilmez — bayat bir form değeri sunucudaki
+      // guard trigger'ı tetiklemesin.
+      setSaving(true);
+      const { error: dbErr } = await supabase
+        .from('barriers')
+        .update({
+          name: form.name.trim(),
+          is_active: form.is_active,
+          hands_free_enabled: form.hands_free_enabled,
+        })
+        .eq('id', barrier.id);
+      setSaving(false);
+      if (dbErr) {
+        onError(`Güncellenemedi: ${dbErr.message}`);
+        return;
+      }
+      onSaved('update');
+      return;
+    }
+
+    if (!form.ble_identifier.trim()) {
+      setError('BLE kimliği zorunludur.');
       return;
     }
     const relay = Number.parseInt(form.relay_duration_ms, 10);
@@ -71,18 +106,23 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
       setError('Röle süresi en az 100 ms olmalıdır.');
       return;
     }
-    let rssi: number | null = null;
+    // Migration 0024'ten sonra NOT NULL; boş bırakılırsa DB default'una (-65)
+    // hizalı bir değer yolla. DB CHECK constraint: -100 .. -30.
+    let rssi = -65;
     if (form.rssi_threshold.trim() !== '') {
       const n = Number.parseInt(form.rssi_threshold, 10);
       if (Number.isNaN(n)) {
         setError('RSSI geçerli bir sayı olmalıdır.');
         return;
       }
+      if (n < -100 || n > -30) {
+        setError('RSSI -100 ile -30 arasında olmalıdır.');
+        return;
+      }
       rssi = n;
     }
 
     setSaving(true);
-    const supabase = createClient();
 
     if (barrier) {
       const { error: dbErr } = await supabase
@@ -128,7 +168,13 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
       open={open}
       onOpenChange={onOpenChange}
       title={barrier ? 'Bariyeri düzenle' : 'Yeni bariyer'}
-      description={barrier ? undefined : 'Yetkilendirme jetonu otomatik üretilir.'}
+      description={
+        barrier
+          ? isSuper
+            ? undefined
+            : 'Adı, aktifliği ve elsiz modu güncelleyebilirsiniz.'
+          : 'Yetkilendirme jetonu otomatik üretilir.'
+      }
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
@@ -150,38 +196,51 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
             autoFocus
           />
         </Field>
-        <Field label="BLE kimliği" htmlFor="b-ble" hint="ESP32 üzerinde GATEPASS_001 vb. olarak yayın yapan ad.">
-          <Input
-            id="b-ble"
-            value={form.ble_identifier}
-            onChange={(e) => setForm((f) => ({ ...f, ble_identifier: e.target.value }))}
-            placeholder="GATEPASS_001"
-            className="font-mono uppercase"
-            spellCheck={false}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Röle süresi (ms)" htmlFor="b-relay" hint="Tipik değer 2000.">
-            <Input
-              id="b-relay"
-              inputMode="numeric"
-              value={form.relay_duration_ms}
-              onChange={(e) => setForm((f) => ({ ...f, relay_duration_ms: e.target.value }))}
-              placeholder="2000"
-              className="font-mono"
-            />
-          </Field>
-          <Field label="RSSI eşiği (dBm)" htmlFor="b-rssi" optional hint="Boş bırakılırsa mesafe kontrolü kapalı.">
-            <Input
-              id="b-rssi"
-              inputMode="numeric"
-              value={form.rssi_threshold}
-              onChange={(e) => setForm((f) => ({ ...f, rssi_threshold: e.target.value }))}
-              placeholder="-70"
-              className="font-mono"
-            />
-          </Field>
-        </div>
+        {isSuper ? (
+          <>
+            <Field label="BLE kimliği" htmlFor="b-ble" hint="ESP32 üzerinde GATEPASS_001 vb. olarak yayın yapan ad.">
+              <Input
+                id="b-ble"
+                value={form.ble_identifier}
+                onChange={(e) => setForm((f) => ({ ...f, ble_identifier: e.target.value }))}
+                placeholder="GATEPASS_001"
+                className="font-mono uppercase"
+                spellCheck={false}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Röle süresi (ms)" htmlFor="b-relay" hint="Tipik değer 2000.">
+                <Input
+                  id="b-relay"
+                  inputMode="numeric"
+                  value={form.relay_duration_ms}
+                  onChange={(e) => setForm((f) => ({ ...f, relay_duration_ms: e.target.value }))}
+                  placeholder="2000"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="RSSI eşiği (dBm)" htmlFor="b-rssi" optional hint="Boş bırakılırsa -65 kullanılır.">
+                <Input
+                  id="b-rssi"
+                  inputMode="numeric"
+                  value={form.rssi_threshold}
+                  onChange={(e) => setForm((f) => ({ ...f, rssi_threshold: e.target.value }))}
+                  placeholder="-65"
+                  className="font-mono"
+                />
+              </Field>
+            </div>
+          </>
+        ) : barrier ? (
+          <div className="rounded-[10px] border border-sep bg-surface px-3 divide-y divide-sep">
+            <HardwareRow label="BLE kimliği" value={barrier.ble_identifier} />
+            <HardwareRow label="Röle süresi" value={`${barrier.relay_duration_ms}ms`} />
+            <HardwareRow label="RSSI eşiği" value={`${barrier.rssi_threshold} dBm`} />
+            <p className="py-2.5 text-xs text-textMuted leading-relaxed">
+              Donanım ayarlarını yalnızca Gate One ekibi değiştirebilir.
+            </p>
+          </div>
+        ) : null}
 
         <SwitchRow
           label="Aktif"
@@ -203,6 +262,15 @@ export function BarrierFormDialog({ open, onOpenChange, siteId, barrier, onSaved
         )}
       </form>
     </Dialog>
+  );
+}
+
+function HardwareRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <span className="text-xs font-medium text-textSec">{label}</span>
+      <span className="text-xs font-mono text-text truncate">{value}</span>
+    </div>
   );
 }
 
