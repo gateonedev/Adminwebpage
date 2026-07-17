@@ -154,43 +154,36 @@ export function UserDetailDialog({
   }
 
   async function handleReject() {
-    if (!user) return;
+    if (!user || user.role !== 'resident') return;
     setBusy('reject');
     const supabase = createClient();
-    const { error } = await supabase.from('users').update({ status: 'rejected' }).eq('id', user.id);
+    // Doğrudan status yazması guard trigger'la kapalı (migration 56);
+    // 'user.reject' audit'ini RPC sunucuda yazar.
+    const { error } = await supabase.rpc('reject_user', { p_user_id: user.id });
     setBusy(null);
     if (error) {
       onError(`Reddedilemedi: ${error.message}`);
       return;
     }
-    void logAudit({
-      action: 'user.reject',
-      target_type: 'user',
-      target_id: user.id,
-      target_label: user.full_name || user.email || undefined,
-      site_id: user.site_id,
-    });
     onSuccess(`${user.full_name || 'Kullanıcı'} reddedildi.`);
   }
 
   async function handleToggleSuspend() {
-    if (!user) return;
+    if (!user || user.role !== 'resident') return;
     const next = user.status === 'suspended' ? 'active' : 'suspended';
     setBusy('suspend');
     const supabase = createClient();
-    const { error } = await supabase.from('users').update({ status: next }).eq('id', user.id);
+    // Doğrudan status yazması guard trigger'la kapalı (migration 56);
+    // user.suspend/unsuspend audit'ini RPC sunucuda yazar.
+    const { error } = await supabase.rpc('set_resident_status', {
+      p_user_id: user.id,
+      p_status: next,
+    });
     setBusy(null);
     if (error) {
       onError(`Güncellenemedi: ${error.message}`);
       return;
     }
-    void logAudit({
-      action: next === 'suspended' ? 'user.suspend' : 'user.unsuspend',
-      target_type: 'user',
-      target_id: user.id,
-      target_label: user.full_name || user.email || undefined,
-      site_id: user.site_id,
-    });
     onSuccess(next === 'suspended' ? 'Kullanıcı askıya alındı.' : 'Kullanıcı tekrar aktif edildi.');
   }
 
@@ -783,14 +776,18 @@ function FooterActions({
             Siteden çıkar
           </Button>
         )}
-        <Button
-          variant={user.status === 'suspended' ? 'subtle' : 'ghost'}
-          onClick={onToggleSuspend}
-          loading={busy === 'suspend'}
-          disabled={!!busy}
-        >
-          {user.status === 'suspended' ? 'Aktifleştir' : 'Askıya al'}
-        </Button>
+        {/* set_resident_status RPC'si yalnız sakinleri kabul eder; admin
+            statüsü /admins sayfasından (service_role, guard'dan muaf) yönetilir. */}
+        {user.role === 'resident' && (
+          <Button
+            variant={user.status === 'suspended' ? 'subtle' : 'ghost'}
+            onClick={onToggleSuspend}
+            loading={busy === 'suspend'}
+            disabled={!!busy}
+          >
+            {user.status === 'suspended' ? 'Aktifleştir' : 'Askıya al'}
+          </Button>
+        )}
         <Button variant="subtle" onClick={onAdvanceToAssign} disabled={!!busy}>
           Yetkiler
         </Button>

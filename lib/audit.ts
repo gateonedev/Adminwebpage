@@ -13,7 +13,7 @@ import { createClient } from '@/lib/supabase/client';
 
 export type AuditAction =
   | 'admin.create'
-  | 'admin.update_role'
+  | 'admin.update_role'   // written by set_user_role RPC; do not call from app code
   | 'admin.set_status'
   | 'admin.reset_password'
   | 'admin.delete'
@@ -21,9 +21,9 @@ export type AuditAction =
   | 'admin.self_password_change'
   | 'user.approve'        // written by approve_user RPC; do not call from app code
   | 'user.profile_update' // written by admin_update_resident_profile RPC; do not call from app code
-  | 'user.reject'
-  | 'user.suspend'
-  | 'user.unsuspend'
+  | 'user.reject'         // written by reject_user RPC; do not call from app code
+  | 'user.suspend'        // written by set_resident_status RPC; do not call from app code
+  | 'user.unsuspend'      // written by set_resident_status RPC; do not call from app code
   | 'user.reset_device'
   | 'user.archive'        // written by archive_user RPC; do not call from app code
   | 'user.restore'        // written by restore_archived_user RPC; do not call from app code

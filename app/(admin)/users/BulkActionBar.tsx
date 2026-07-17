@@ -75,29 +75,45 @@ export function BulkActionBar({ siteId, selectedUsers, onClear, onSuccess, onErr
     const supabase = createClient();
     const ids = selectedUsers.map((u) => u.id);
 
-    const { error } = await supabase
-      .from('users')
-      .update({ status: next })
-      .in('id', ids);
+    // Doğrudan status yazması guard trigger'la kapalı (migration 56); her
+    // çağrı kendi user.suspend/unsuspend audit satırını RPC içinde yazar
+    // (handleApprove ile aynı desen).
+    const results = await Promise.allSettled(
+      ids.map((uid) =>
+        supabase.rpc('set_resident_status', { p_user_id: uid, p_status: next }),
+      ),
+    );
 
-    if (error) {
-      setBusy(null);
-      onError(`Güncellenemedi: ${error.message}`);
-      return;
-    }
+    const failures = results.filter(
+      (r) =>
+        r.status === 'rejected' ||
+        (r.status === 'fulfilled' && (r.value as { error?: unknown }).error),
+    ).length;
 
+    // Summary audit row for super_admin's accountability view.
     void logAudit({
       action: next === 'suspended' ? 'user.bulk_suspend' : 'user.bulk_unsuspend',
       site_id: siteId,
-      metadata: { count, user_ids: ids },
+      metadata: {
+        count,
+        succeeded: count - failures,
+        failed:    failures,
+        user_ids:  ids,
+      },
     });
 
     setBusy(null);
-    onSuccess(
-      next === 'suspended'
-        ? `${count} sakin askıya alındı.`
-        : `${count} sakin tekrar aktif edildi.`,
-    );
+    if (failures === 0) {
+      onSuccess(
+        next === 'suspended'
+          ? `${count} sakin askıya alındı.`
+          : `${count} sakin tekrar aktif edildi.`,
+      );
+    } else if (failures === count) {
+      onError('Hiçbir sakin güncellenemedi.');
+    } else {
+      onSuccess(`${count - failures} sakin güncellendi, ${failures} hata oluştu.`);
+    }
   }
 
   return (

@@ -109,13 +109,14 @@ export async function updateAdminRole(input: z.infer<typeof updateRoleSchema>): 
 
   const supabase = await createClient();
 
-  // Read the prior state for the audit metadata.
   const { data: prior } = await supabase
     .from('users')
-    .select('email, full_name, role, site_id')
+    .select('full_name')
     .eq('id', id)
     .single();
 
+  // admin.update_role audit'ini set_user_role sunucuda kendisi yazar
+  // (migration 56); istemci taraflı insert çift kayıt olurdu.
   const { error } = await supabase.rpc('set_user_role', {
     p_user_id: id,
     p_role: role,
@@ -131,23 +132,6 @@ export async function updateAdminRole(input: z.infer<typeof updateRoleSchema>): 
     const { error: nameError } = await admin.from('users').update({ full_name }).eq('id', id);
     if (nameError) return { ok: false, message: nameError.message };
   }
-
-  await logAuditServer(me.id, {
-    action: 'admin.update_role',
-    target_type: 'admin',
-    target_id: id,
-    target_label: prior?.email ?? prior?.full_name ?? undefined,
-    site_id: target_site_id,
-    metadata: {
-      from_role:    prior?.role ?? null,
-      to_role:      role,
-      from_site_id: prior?.site_id ?? null,
-      to_site_id:   target_site_id,
-      ...(nameChanged
-        ? { from_name: prior?.full_name ?? null, to_name: full_name }
-        : {}),
-    },
-  });
 
   revalidatePath('/admins');
   return { ok: true };
