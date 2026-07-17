@@ -20,6 +20,7 @@ export type AuditAction =
   | 'admin.self_profile_update'
   | 'admin.self_password_change'
   | 'user.approve'        // written by approve_user RPC; do not call from app code
+  | 'user.profile_update' // written by admin_update_resident_profile RPC; do not call from app code
   | 'user.reject'
   | 'user.suspend'
   | 'user.unsuspend'

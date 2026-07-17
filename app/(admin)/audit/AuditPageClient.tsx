@@ -38,6 +38,7 @@ const ACTION_DEF: Record<AuditAction, { label: string; tone: 'accent' | 'success
   'admin.self_profile_update':    { label: 'Profil güncellendi',            tone: 'muted'   },
   'admin.self_password_change':   { label: 'Kendi şifresini değiştirdi',    tone: 'warn'    },
   'user.approve':                 { label: 'Sakin onaylandı',               tone: 'success' },
+  'user.profile_update':          { label: 'Sakin profili güncellendi',     tone: 'accent'  },
   'user.reject':                  { label: 'Sakin reddedildi',              tone: 'danger'  },
   'user.suspend':                 { label: 'Sakin askıya alındı',           tone: 'warn'    },
   'user.unsuspend':               { label: 'Sakin aktifleştirildi',         tone: 'success' },
@@ -178,6 +179,14 @@ const STATUS_TR: Record<string, string> = {
   rejected:  'Reddedildi',
 };
 
+const PROFILE_FIELD_TR: Record<string, string> = {
+  full_name: 'ad',
+  phone: 'telefon',
+  plate: 'plaka',
+  block_name: 'blok',
+  apartment_no: 'daire',
+};
+
 const BARRIER_FIELD_TR: Record<string, string> = {
   name: 'ad',
   site_id: 'site',
@@ -222,6 +231,16 @@ function describeMetadata(row: AuditRow): string | null {
     case 'user.reset_device': {
       const prev = typeof m.previous_device_id === 'string' ? m.previous_device_id : null;
       return prev ? `Önceki cihaz: ${prev}` : null;
+    }
+    case 'user.profile_update': {
+      const fn = typeof m.from_name === 'string' ? m.from_name : null;
+      const tn = typeof m.to_name === 'string' ? m.to_name : null;
+      if (fn && tn && fn !== tn) return `${fn} → ${tn}`;
+      const changed = Array.isArray(m.changed)
+        ? (m.changed as unknown[]).filter((x): x is string => typeof x === 'string')
+        : [];
+      const parts = changed.map((k) => PROFILE_FIELD_TR[k] ?? k);
+      return parts.length > 0 ? parts.join(' · ') : null;
     }
     case 'barrier.create':
       return typeof m.ble_identifier === 'string' ? `BLE: ${m.ble_identifier}` : null;

@@ -56,6 +56,9 @@ export function UserDetailDialog({
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [plate, setPlate] = useState('');
+  const [blockName, setBlockName] = useState('');
+  const [apartmentNo, setApartmentNo] = useState('');
 
   const [selectedBarriers, setSelectedBarriers] = useState<Set<string>>(new Set());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
@@ -73,6 +76,9 @@ export function UserDetailDialog({
     setConfirmAction(null);
     setFullName(user.full_name ?? '');
     setPhone(user.phone ?? '');
+    setPlate(user.plate ?? '');
+    setBlockName(user.block_name ?? '');
+    setApartmentNo(user.apartment_no ?? '');
     setSelectedBarriers(new Set());
     setSelectedGroups(new Set());
     setExistingBarriers(new Set());
@@ -104,13 +110,22 @@ export function UserDetailDialog({
   }, [user]);
 
   const isPending = user?.status === 'pending';
+  // admin_update_resident_profile RPC'si yalnız arşivlenmemiş sakinleri kabul
+  // eder (mobil parity): admin profilleri /admins sayfasından yönetilir.
+  const canEditProfile = !!user && user.role === 'resident' && user.status !== 'archived';
   const dirtyAssignments = useMemo(() => {
     if (!user || !(user.status === 'active' || user.status === 'suspended')) return false;
     if (!sameSet(existingBarriers, selectedBarriers)) return true;
     if (!sameSet(existingGroups, selectedGroups)) return true;
     return false;
   }, [user, existingBarriers, existingGroups, selectedBarriers, selectedGroups]);
-  const dirtyProfile = !!user && (fullName.trim() !== (user.full_name ?? '') || (phone || '') !== (user.phone ?? ''));
+  const dirtyProfile =
+    !!user &&
+    (fullName.trim() !== (user.full_name ?? '') ||
+      (phone || '') !== (user.phone ?? '') ||
+      (plate || '') !== (user.plate ?? '') ||
+      (blockName || '') !== (user.block_name ?? '') ||
+      (apartmentNo || '') !== (user.apartment_no ?? ''));
 
   if (!user) return null;
 
@@ -255,22 +270,30 @@ export function UserDetailDialog({
   }
 
   async function handleSaveProfile() {
-    if (!user) return;
+    if (!user || user.role !== 'resident') return;
+    if (!fullName.trim()) {
+      onError('Ad soyad gerekli.');
+      return;
+    }
     setBusy('profile');
     const supabase = createClient();
-    const { error } = await supabase
-      .from('users')
-      .update({
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
-      })
-      .eq('id', user.id);
+    // block_name/apartment_no kolonlarında istemci UPDATE grant'i yok;
+    // normalizasyon (trim/upper/boş→NULL) ve 'user.profile_update' audit'i
+    // RPC içinde atomik (migration 55).
+    const { error } = await supabase.rpc('admin_update_resident_profile', {
+      p_user_id: user.id,
+      p_full_name: fullName,
+      p_phone: phone,
+      p_plate: plate,
+      p_block_name: blockName,
+      p_apartment_no: apartmentNo,
+    });
     setBusy(null);
     if (error) {
       onError(`Kaydedilemedi: ${error.message}`);
       return;
     }
-    onSuccess('Profil kaydedildi.');
+    onSuccess('Profil güncellendi.');
   }
 
   async function handleSaveAssignments() {
@@ -358,6 +381,13 @@ export function UserDetailDialog({
           setFullName={setFullName}
           phone={phone}
           setPhone={setPhone}
+          plate={plate}
+          setPlate={setPlate}
+          blockName={blockName}
+          setBlockName={setBlockName}
+          apartmentNo={apartmentNo}
+          setApartmentNo={setApartmentNo}
+          canEdit={canEditProfile}
           isPending={isPending}
           onResetDevice={handleResetDevice}
           deviceBusy={busy === 'device'}
@@ -416,6 +446,13 @@ function DetailsStep({
   setFullName,
   phone,
   setPhone,
+  plate,
+  setPlate,
+  blockName,
+  setBlockName,
+  apartmentNo,
+  setApartmentNo,
+  canEdit,
   isPending,
   onResetDevice,
   deviceBusy,
@@ -425,11 +462,18 @@ function DetailsStep({
   setFullName: (v: string) => void;
   phone: string;
   setPhone: (v: string) => void;
+  plate: string;
+  setPlate: (v: string) => void;
+  blockName: string;
+  setBlockName: (v: string) => void;
+  apartmentNo: string;
+  setApartmentNo: (v: string) => void;
+  canEdit: boolean;
   isPending: boolean;
   onResetDevice: () => void;
   deviceBusy: boolean;
 }) {
-  const readOnly = isPending || user.status === 'archived';
+  const readOnly = !canEdit;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <Field label="Ad soyad" htmlFor="ud-name">
@@ -449,20 +493,37 @@ function DetailsStep({
           disabled={readOnly}
         />
       </Field>
-      <Field label="Plaka" htmlFor="ud-plate">
-        <Input id="ud-plate" value={user.plate ?? '—'} disabled className="font-mono" />
-      </Field>
-      <Field label="Blok / Daire" htmlFor="ud-unit">
+      <Field label="Plaka" htmlFor="ud-plate" optional>
         <Input
-          id="ud-unit"
-          value={
-            user.block_name || user.apartment_no
-              ? [user.block_name, user.apartment_no].filter(Boolean).join(' / ')
-              : '—'
-          }
-          disabled
+          id="ud-plate"
+          value={plate}
+          onChange={(e) => setPlate(e.target.value)}
+          placeholder={readOnly ? '—' : '34 ABC 123'}
+          disabled={readOnly}
+          className="font-mono uppercase"
         />
       </Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Blok" htmlFor="ud-block" optional>
+          <Input
+            id="ud-block"
+            value={blockName}
+            onChange={(e) => setBlockName(e.target.value)}
+            placeholder={readOnly ? '—' : 'A'}
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Daire" htmlFor="ud-apartment" optional>
+          <Input
+            id="ud-apartment"
+            value={apartmentNo}
+            onChange={(e) => setApartmentNo(e.target.value)}
+            placeholder={readOnly ? '—' : '12'}
+            disabled={readOnly}
+            className="font-mono"
+          />
+        </Field>
+      </div>
       <Field label="E-posta" htmlFor="ud-email">
         <Input id="ud-email" value={user.email ?? ''} disabled className="font-mono" />
       </Field>
@@ -646,8 +707,10 @@ function FooterActions({
   onArchiveClick: () => void;
   onRestoreClick: () => void;
 }) {
-  // archive_user / restore_archived_user RPC'leri yalnızca sakin hesaplarını kabul eder.
+  // archive_user / restore_archived_user / admin_update_resident_profile
+  // RPC'leri yalnızca sakin hesaplarını kabul eder.
   const canArchive = user.role === 'resident';
+  const canEditProfile = user.role === 'resident';
 
   if (user.status === 'archived') {
     if (!canArchive) return null;
@@ -665,6 +728,16 @@ function FooterActions({
           <Button variant="ghost" onClick={onReject} loading={busy === 'reject'} disabled={!!busy}>
             Reddet
           </Button>
+          {canEditProfile && (
+            <Button
+              variant="subtle"
+              onClick={onSaveProfile}
+              loading={busy === 'profile'}
+              disabled={!!busy || !dirtyProfile}
+            >
+              Kaydet
+            </Button>
+          )}
           <Button onClick={onAdvanceToAssign} disabled={!!busy}>
             Devam et
           </Button>
@@ -687,9 +760,18 @@ function FooterActions({
   if (user.status === 'rejected') {
     if (!canArchive) return null;
     return (
-      <Button variant="ghost" onClick={onArchiveClick} loading={busy === 'archive'} disabled={!!busy}>
-        Siteden çıkar
-      </Button>
+      <>
+        <Button variant="ghost" onClick={onArchiveClick} loading={busy === 'archive'} disabled={!!busy}>
+          Siteden çıkar
+        </Button>
+        <Button
+          onClick={onSaveProfile}
+          loading={busy === 'profile'}
+          disabled={!!busy || !dirtyProfile}
+        >
+          Kaydet
+        </Button>
+      </>
     );
   }
 
@@ -712,9 +794,11 @@ function FooterActions({
         <Button variant="subtle" onClick={onAdvanceToAssign} disabled={!!busy}>
           Yetkiler
         </Button>
-        <Button onClick={onSaveProfile} loading={busy === 'profile'} disabled={!!busy || !dirtyProfile}>
-          Kaydet
-        </Button>
+        {canEditProfile && (
+          <Button onClick={onSaveProfile} loading={busy === 'profile'} disabled={!!busy || !dirtyProfile}>
+            Kaydet
+          </Button>
+        )}
       </>
     );
   }
