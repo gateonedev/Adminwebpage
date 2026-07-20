@@ -32,7 +32,7 @@ export default async function GuestsPage() {
   // hint'lerle sorguluyor.
   const { data, error } = await supabase
     .from('guests')
-    .select('id, guest_name, guest_phone, access_type, expires_at, max_uses, current_uses, is_active, approval_status, user_id, created_at, barriers!barrier_id!inner(name, site_id), users!invited_by(full_name), guest_barriers(barriers(name))')
+    .select('id, guest_name, guest_phone, access_type, expires_at, max_uses, current_uses, first_used_at, is_active, approval_status, user_id, created_at, barriers!barrier_id!inner(name, site_id), users!invited_by(full_name), guest_barriers(uses_count, barriers(name))')
     .eq('barriers.site_id', ctx.siteId)
     .order('created_at', { ascending: false });
 

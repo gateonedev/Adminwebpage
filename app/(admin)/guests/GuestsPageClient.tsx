@@ -18,14 +18,16 @@ export interface GuestRow {
   expires_at: string | null;
   max_uses: number | null;
   current_uses: number;
+  /** one_time 24s fitili — ilk tüketilen açılış anı (migration 63). */
+  first_used_at: string | null;
   is_active: boolean;
   approval_status: GuestApprovalStatus;
   user_id: string | null;
   created_at: string;
   barriers: { name: string | null } | null;
   users:    { full_name: string | null } | null;
-  /** Çoklu bariyer davetleri (migration 53). Boşsa tek bariyerli eski davet. */
-  guest_barriers: { barriers: { name: string | null } | null }[] | null;
+  /** Çoklu bariyer davetleri (migration 53) + kapı-başı sayaç (migration 63). Boşsa tek bariyerli eski davet. */
+  guest_barriers: { uses_count: number; barriers: { name: string | null } | null }[] | null;
 }
 
 // set_guest_approval RPC dönüş şekli — mobile/lib/supabase.ts ile eş.
@@ -54,6 +56,24 @@ const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
   month: 'short',
   year: 'numeric',
 });
+
+// Kapı başına kullanım limiti — backend _guest_barrier_limit (migration 63) ile
+// eş tutulmalı; mobildeki ONE_TIME_GATE_LIMIT ile de senkron.
+const ONE_TIME_GATE_LIMIT = 2; // giriş + çıkış
+const ONE_TIME_FUSE_MS = 24 * 60 * 60 * 1000;
+
+// count_limited → kapı başına max_uses; one_time → 2; time_limited → sınırsız (null).
+function gateLimit(g: GuestRow): number | null {
+  if (g.access_type === 'one_time') return ONE_TIME_GATE_LIMIT;
+  if (g.access_type === 'count_limited') return g.max_uses ?? null;
+  return null;
+}
+
+// one_time davet ilk kullanımdan 24 saat sonra kendiliğinden geçersizleşir.
+function oneTimeFuseExpired(g: GuestRow): boolean {
+  if (g.access_type !== 'one_time' || !g.first_used_at) return false;
+  return Date.now() > new Date(g.first_used_at).getTime() + ONE_TIME_FUSE_MS;
+}
 
 interface Props {
   initialGuests: GuestRow[];
@@ -167,17 +187,43 @@ export function GuestsPageClient({ initialGuests }: Props) {
     setConfirm(null);
   }
 
-  function expiryLabel(g: GuestRow): string {
-    if (g.access_type === 'count_limited') {
-      return `${g.current_uses}/${g.max_uses ?? '?'} kullanım`;
+  function renderUsage(g: GuestRow) {
+    // time_limited: süre yönetir → son kullanım tarihi (değişmez).
+    if (g.access_type === 'time_limited') {
+      return g.expires_at ? dateFormatter.format(new Date(g.expires_at)) : '—';
     }
-    if (g.access_type === 'time_limited' && g.expires_at) {
-      return dateFormatter.format(new Date(g.expires_at));
+    // one_time 24s fitili yandıysa davet fiilen bitmiştir.
+    if (g.access_type === 'one_time' && oneTimeFuseExpired(g)) {
+      return 'Süre doldu (24s)';
     }
-    if (g.access_type === 'one_time') {
-      return g.current_uses > 0 ? 'Kullanıldı' : 'Tek seferlik';
+    // count_limited & one_time: kalan hak KAPI BAŞINA (migration 63).
+    // Gösterim "kalan/limit"; toplam (current_uses) artık limiti aşabildiği için
+    // kullanılmaz.
+    const limit = gateLimit(g);
+    const gates = g.guest_barriers ?? [];
+    if (gates.length > 0) {
+      const parts = gates.map((gb) => ({
+        name: gb.barriers?.name ?? '—',
+        text:
+          limit != null
+            ? `${Math.max(0, limit - gb.uses_count)}/${limit}`
+            : `${gb.uses_count}`,
+      }));
+      // Tek kapı: isim zaten "Bariyer" sütununda, tekrar etme.
+      if (parts.length === 1) return `${parts[0].text} kalan`;
+      return (
+        <div className="flex flex-col gap-0.5" title="Kapı başına kalan / limit">
+          {parts.map((p, i) => (
+            <span key={i} className="truncate">
+              {p.name}: {p.text}
+            </span>
+          ))}
+        </div>
+      );
     }
-    return '—';
+    // Fallback: guest_barriers yok (çok eski tek-kapılı davet) → toplam sayaca düş.
+    if (limit != null) return `${Math.max(0, limit - g.current_uses)}/${limit} kalan`;
+    return g.current_uses > 0 ? `${g.current_uses} kullanım` : 'Tek seferlik';
   }
 
   return (
@@ -241,7 +287,7 @@ export function GuestsPageClient({ initialGuests }: Props) {
               <div className="text-sm text-textSec truncate" title={barrierLabel(g)}>{barrierLabel(g)}</div>
               <div className="text-sm text-textSec truncate">{g.users?.full_name ?? '—'}</div>
               <Badge tone={ACCESS_TONE[g.access_type]}>{ACCESS_LABEL[g.access_type]}</Badge>
-              <div className="text-xs text-textSec font-mono whitespace-nowrap">{expiryLabel(g)}</div>
+              <div className="text-xs text-textSec font-mono">{renderUsage(g)}</div>
               <div className="flex items-center justify-end gap-2">
                 {!g.is_active ? (
                   <Badge tone="muted">İptal edildi</Badge>
