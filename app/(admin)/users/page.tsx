@@ -77,6 +77,7 @@ export default async function UsersPage() {
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
       <UsersPageClient
+        key={ctx.siteId}
         siteId={ctx.siteId}
         initialUsers={(usersResp.data ?? []) as unknown as AppUser[]}
         barriers={(barriersResp.data ?? []) as BarrierLite[]}

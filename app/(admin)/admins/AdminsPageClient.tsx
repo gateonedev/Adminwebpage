@@ -27,7 +27,7 @@ export type ActiveDialog =
 
 export function AdminsPageClient({ currentUserId, initialAdmins, sites }: Props) {
   const router = useRouter();
-  const [admins] = useState(initialAdmins);
+  const admins = initialAdmins;
   const [dialog, setDialog] = useState<ActiveDialog>(null);
 
   function refresh() {

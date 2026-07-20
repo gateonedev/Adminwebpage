@@ -21,7 +21,7 @@ interface Props {
 // guard trigger + delete_barrier RPC'siyle de zorlanır).
 export function BarriersPageClient({ siteId, isSuper, initialBarriers }: Props) {
   const router = useRouter();
-  const [barriers] = useState(initialBarriers);
+  const barriers = initialBarriers;
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Barrier | null>(null);
   const [deleting, setDeleting] = useState<Barrier | null>(null);

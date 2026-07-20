@@ -27,7 +27,7 @@ interface Props {
 
 export function GroupsPageClient({ siteId, initialGroups, users, barriers }: Props) {
   const router = useRouter();
-  const [groups] = useState(initialGroups);
+  const groups = initialGroups;
   const [createOpen, setCreateOpen] = useState(false);
   const [active, setActive] = useState<GroupRow | null>(null);
   const [deleting, setDeleting] = useState<GroupRow | null>(null);

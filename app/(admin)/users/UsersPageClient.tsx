@@ -37,7 +37,7 @@ function normalize(s: string | null | undefined): string {
 
 export function UsersPageClient({ siteId, initialUsers, barriers, groups }: Props) {
   const router = useRouter();
-  const [users] = useState(initialUsers);
+  const users = initialUsers;
   const [filter, setFilter] = useState<Filter>(
     initialUsers.some((u) => u.status === 'pending') ? 'pending' : 'all',
   );

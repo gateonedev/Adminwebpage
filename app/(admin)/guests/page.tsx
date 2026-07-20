@@ -59,7 +59,7 @@ export default async function GuestsPage() {
         description="Sakinlerin oluşturduğu davetler. Bekleyenleri onaylayın, gerekirse iptal edin."
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
-      <GuestsPageClient initialGuests={guests} />
+      <GuestsPageClient key={ctx.siteId} initialGuests={guests} />
     </>
   );
 }

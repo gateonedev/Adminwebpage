@@ -55,7 +55,7 @@ export default async function LogsPage() {
         description="Bu sitenin erişim kayıtları, en yeni en üstte. Tarih, bariyer ve yöntem ile filtreleyin."
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
-      <LogsPageClient initialLogs={logs} initialHasMore={hasMore} barriers={barriers} siteId={ctx.siteId} />
+      <LogsPageClient key={ctx.siteId} initialLogs={logs} initialHasMore={hasMore} barriers={barriers} siteId={ctx.siteId} />
     </>
   );
 }

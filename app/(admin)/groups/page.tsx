@@ -74,6 +74,7 @@ export default async function GroupsPage() {
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
       <GroupsPageClient
+        key={ctx.siteId}
         siteId={ctx.siteId}
         initialGroups={(groupsResp.data ?? []) as GroupRow[]}
         users={(usersResp.data ?? []) as UserLite[]}

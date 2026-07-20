@@ -57,6 +57,7 @@ export default async function BarriersPage() {
         right={ctx.sites && <SitePicker sites={ctx.sites} activeSiteId={ctx.siteId} />}
       />
       <BarriersPageClient
+        key={ctx.siteId}
         siteId={ctx.siteId}
         isSuper={ctx.me.role === 'super_admin'}
         initialBarriers={(data ?? []) as unknown as Barrier[]}
